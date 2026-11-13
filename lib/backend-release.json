@@ -1,7 +1,7 @@
 {
-  "version": "4.28.0-magpie.2",
+  "version": "4.28.0-magpie.3",
   "repository": "dorokuma/magpie-gemini-web",
-  "tag": "backend-v4.28.0-magpie.2",
+  "tag": "backend-v4.28.0-magpie.3",
   "upstream": {
     "repository": "https://github.com/dorokuma/gemini-web2api-go.git",
     "version": "v4.28.0",
@@ -10,28 +10,28 @@
   "goVersion": "1.27.1",
   "binaries": {
     "darwin-arm64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_darwin_arm64",
-      "sha256": "bae50534de773107e53e5d5a9ec2a89a4d477dcfbae35997133fdc631c4b417e"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_darwin_arm64",
+      "sha256": "9b14c6361fb4e3d2deaefafa1d36d7811ba2c8ea38830a94d790e43597004370"
     },
     "darwin-x64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_darwin_amd64",
-      "sha256": "1e60c46f53dec6c81ea4e5daf46d38233c2ccee578b8ad5ab5c3165ad01b0d92"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_darwin_amd64",
+      "sha256": "0b668fa8007a3df59befc6c6dd91d106507eef055aabaa7cb155795157d6b012"
     },
     "linux-x64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_linux_amd64",
-      "sha256": "a8bf080649b6c069de2d343ea16331e49f7bea000c455c80414f830215d0ad38"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_linux_amd64",
+      "sha256": "d6d29b23b587c210ecfa3b307fbcd5aeeba43dcb5e8ccbe56241ac259ef4f27e"
     },
     "linux-arm64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_linux_arm64",
-      "sha256": "916369e699ecd4d447f2f84016973aeb5b91268ab23185af5cfc3461c9c100bc"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_linux_arm64",
+      "sha256": "89e3a17c5878c28227f528fe53416fae9c86d48c0621a665d8c037831193c71f"
     },
     "win32-x64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_windows_amd64.exe",
-      "sha256": "e61e7ca5da304ae6cd0fb34ea889289840d507d95b4d02ca78da688085ba58e8"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_windows_amd64.exe",
+      "sha256": "8ed8a131f8088457ac4d173f36b5518f61ef809625d5b97d60823776230734fa"
     },
     "win32-arm64": {
-      "asset": "gemini-web2api-go_v4.28.0-magpie.2_windows_arm64.exe",
-      "sha256": "785048f6767eb5511c09f082bc95d07988e8e1d2db93401f012d906bf4ea4289"
+      "asset": "gemini-web2api-go_v4.28.0-magpie.3_windows_arm64.exe",
+      "sha256": "539a045fa4c24a36210457b098d7e7f97902ac75bf31e68e33f0622cf1c3174c"
     }
   }
 }
