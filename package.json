@@ -1,17 +1,17 @@
 {
   "name": "magpie-gemini-web",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Gemini Web and Google AI Studio provider for Magpie, backed by gemini-web2api-go and AIStudio2API",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BUKOWSKIREAL/magpie-gemini-web.git"
+    "url": "git+https://github.com/dorokuma/magpie-gemini-web.git"
   },
-  "homepage": "https://github.com/BUKOWSKIREAL/magpie-gemini-web#readme",
+  "homepage": "https://github.com/dorokuma/magpie-gemini-web#readme",
   "bugs": {
-    "url": "https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues"
+    "url": "https://github.com/dorokuma/magpie-gemini-web/issues"
   },
   "publishConfig": {
     "access": "public",

@@ -1,5 +1,5 @@
 diff --git a/go.mod b/go.mod
-index c6a75e272d59110a5f83e71bfa89b4588622905d..db2c8f5f60618bad14c38e013b469132d2c0c546 100644
+index c6a75e2..db2c8f5 100644
 --- a/go.mod
 +++ b/go.mod
 @@ -9,6 +9,7 @@ require (
@@ -19,7 +19,7 @@ index c6a75e272d59110a5f83e71bfa89b4588622905d..db2c8f5f60618bad14c38e013b469132
  	golang.org/x/text v0.42.0 // indirect
  	modernc.org/libc v1.72.3 // indirect
 diff --git a/internal/app/admin_cookies.go b/internal/app/admin_cookies.go
-index 78236c6760f6509fcdce801ba853d9ecfafe16ca..a5109b0785d71c0ed1081b7316c2b3319223b160 100644
+index 78236c6..a5109b0 100644
 --- a/internal/app/admin_cookies.go
 +++ b/internal/app/admin_cookies.go
 @@ -87,9 +87,10 @@ func handleAdminCookies(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +65,7 @@ index 78236c6760f6509fcdce801ba853d9ecfafe16ca..a5109b0785d71c0ed1081b7316c2b331
  			// 只改传了的字段：没传的沿用当前值。
  			var curLabel, curNote string
 diff --git a/internal/app/admin_ui/index.html b/internal/app/admin_ui/index.html
-index b4acdde93f5f6bab89e7e0cc0e21dc81c9849ccb..77ae3c8e7fce039f22c0b9b633f57402518a4630 100644
+index b4acdde..77ae3c8 100644
 --- a/internal/app/admin_ui/index.html
 +++ b/internal/app/admin_ui/index.html
 @@ -1020,7 +1020,8 @@ const RT_GROUPS = [
@@ -89,10 +89,10 @@ index b4acdde93f5f6bab89e7e0cc0e21dc81c9849ccb..77ae3c8e7fce039f22c0b9b633f57402
    {
 diff --git a/internal/app/argon.go b/internal/app/argon.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2a5e774e8547afb125de6161c624bbfe572fe7e
+index 0000000..10121c5
 --- /dev/null
 +++ b/internal/app/argon.go
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,178 @@
 +package app
 +
 +import (
@@ -115,15 +115,21 @@ index 0000000000000000000000000000000000000000..a2a5e774e8547afb125de6161c624bbf
 +
 +// argonDisplayNames 是上游对 Argon 各思考档位自报的显示名：普通档 "4 Argon"，
 +// 扩展思考（think=2，上游叫 High）"4 Argon High"，中档（think=4）自报 "4 Argon" 或 "4 Argon Medium"。
++// 2026-11 起上游把同一槽位的显示名原位改名成 "4 Carbon" 家族（hex 95a4c0abcba24364、Mode=8 不变），
++// 改名滚动期两套名字都算同一模型的合法自报，按档位一起收。
 +// 按请求的档位只认对应名字，档位被静默换掉也算身份不符。
 +func argonDisplayNames(think int) []string {
 +	if think == thinkingExtended {
-+		return []string{"4 Argon High", "Gemini 4 Argon High"}
++		// 2026-11-13 起上游对 High 档的自报又脱了 "High" 后缀、回落成裸 "4 Carbon"
++		// （与 11 月把 "4 Argon"→"4 Carbon" 同一轮滚动改名）；滚动期两套都收。
++		return []string{"4 Argon High", "Gemini 4 Argon High", "4 Carbon High", "Gemini 4 Carbon High",
++			"4 Carbon", "Gemini 4 Carbon"}
 +	}
 +	if think == thinkingMedium {
-+		return []string{"4 Argon", "Gemini 4 Argon", "4 Argon Medium", "Gemini 4 Argon Medium"}
++		return []string{"4 Argon", "Gemini 4 Argon", "4 Argon Medium", "Gemini 4 Argon Medium",
++			"4 Carbon", "Gemini 4 Carbon", "4 Carbon Medium", "Gemini 4 Carbon Medium"}
 +	}
-+	return []string{"4 Argon", "Gemini 4 Argon"}
++	return []string{"4 Argon", "Gemini 4 Argon", "4 Carbon", "Gemini 4 Carbon"}
 +}
 +
 +// argonThinkFromHeader 从模型 header 下标 15 取思考档位；最小形式没有这一槽，按普通档。
@@ -267,7 +273,7 @@ index 0000000000000000000000000000000000000000..a2a5e774e8547afb125de6161c624bbf
 +}
 diff --git a/internal/app/argon_probe_test.go b/internal/app/argon_probe_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..bbc0041bb2d8769657d195f9b2b997f4c49da181
+index 0000000..bbc0041
 --- /dev/null
 +++ b/internal/app/argon_probe_test.go
 @@ -0,0 +1,53 @@
@@ -326,10 +332,10 @@ index 0000000000000000000000000000000000000000..bbc0041bb2d8769657d195f9b2b997f4
 +}
 diff --git a/internal/app/argon_test.go b/internal/app/argon_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f0b8cdc8f97bd303aa35bac1dda9d60611428a9
+index 0000000..afa692f
 --- /dev/null
 +++ b/internal/app/argon_test.go
-@@ -0,0 +1,453 @@
+@@ -0,0 +1,711 @@
 +package app
 +
 +import (
@@ -704,6 +710,81 @@ index 0000000000000000000000000000000000000000..2f0b8cdc8f97bd303aa35bac1dda9d60
 +	}
 +}
 +
++// 上游 2026-11 原位改名 "4 Argon" → "4 Carbon"（同 hex、同 Mode=8）：同档名字放行，
++// 跨档仍拒，降级到 Flash 族仍拒；argon 请求收到 carbon 自报不算降级（改名滚动期）。
++func TestArgonCarbonIdentity(t *testing.T) {
++	low := Models["gemini-4-carbon"]
++	med := Models["gemini-4-carbon-thinking-medium"]
++	high := Models["gemini-4-carbon-thinking"]
++	if low.HexID != hexArgon4 || low.Mode != 8 || low.Thinking || low.ThinkWire != 0 ||
++		med.HexID != hexArgon4 || med.Mode != 8 || med.ThinkWire != thinkingMedium || med.Thinking ||
++		high.HexID != hexArgon4 || high.Mode != 8 || !high.Thinking {
++		t.Fatalf("unexpected Carbon model table: low=%+v med=%+v high=%+v", low, med, high)
++	}
++	if !modelNeedsLogin(low) || !modelNeedsLogin(med) || !modelNeedsLogin(high) {
++		t.Fatal("carbon models should require login (same hexArgon4 slot)")
++	}
++
++	lowHeader := buildModelHeader(low.HexID, low.Mode, thinkingNormal, "uuid-x")
++	medHeader := buildModelHeader(med.HexID, med.Mode, thinkingMedium, "uuid-x")
++	highHeader := buildModelHeader(high.HexID, high.Mode, thinkingExtended, "uuid-x")
++	cases := []struct {
++		header, name string
++		ok           bool
++	}{
++		{lowHeader, "4 Carbon", true},
++		{lowHeader, "Gemini 4 Carbon", true},
++		{medHeader, "4 Carbon", true},
++		{medHeader, "4 Carbon Medium", true},
++		{medHeader, "Gemini 4 Carbon Medium", true},
++		{highHeader, "4 Carbon High", true},
++		{highHeader, "Gemini 4 Carbon High", true},
++		// 2026-11-13 起上游对 High 档自报脱了 "High" 后缀、回裸 "4 Carbon"；放行。
++		{highHeader, "4 Carbon", true},
++		{highHeader, "Gemini 4 Carbon", true},
++		{medHeader, "4 Carbon High", false},
++		{lowHeader, "4 Carbon High", false},
++		{lowHeader, "4 Carbon Medium", false},
++		{lowHeader, "3.5 Flash-Lite", false},
++		{lowHeader, "3.6 Flash", false},
++	}
++	for _, c := range cases {
++		frame := makeSyntheticArgonFrame(hexArgon4, c.name, "ok")
++		var got []string
++		_, _, err := readModelCheckedBody(bytes.NewReader(frame), func(l string) error {
++			got = append(got, l)
++			return nil
++		}, time.Now(), 200, c.header)
++		if c.ok && (err != nil || len(got) == 0) {
++			t.Errorf("%q: want pass, err=%v lines=%d", c.name, err, len(got))
++		}
++		if !c.ok && (err == nil || !strings.Contains(err.Error(), "Argon model mismatch") || len(got) != 0) {
++			t.Errorf("%q: want mismatch and no output, err=%v lines=%d", c.name, err, len(got))
++		}
++	}
++
++	// strict_model 判降级：argon/carbon 是同一个槽位的两个名字，互报不算降级；
++	// 掉到 Flash 族仍算降级。
++	for _, c := range []struct {
++		model, reported string
++		want            bool
++	}{
++		{"gemini-4-argon", "4 Carbon", false},
++		{"gemini-4-argon", "4 Carbon High", false},
++		{"gemini-4-argon-thinking", "4 Carbon", false},
++		{"gemini-4-argon-thinking", "4 Carbon High", false},
++		{"gemini-4-carbon", "4 Argon", false},
++		{"gemini-4-carbon-thinking", "4 Argon High", false},
++		{"gemini-4-carbon", "4 Carbon", false},
++		{"gemini-4-carbon", "3.5 Flash-Lite", true},
++		{"gemini-4-carbon-thinking", "3.6 Flash", true},
++	} {
++		if got := modelDowngraded(Models[c.model], c.reported); got != c.want {
++			t.Errorf("modelDowngraded(%s, %q)=%v want %v", c.model, c.reported, got, c.want)
++		}
++	}
++}
++
 +func TestTokenizerLoaderTimeout(t *testing.T) {
 +	t.Setenv("TIKTOKEN_CACHE_DIR", t.TempDir())
 +	prevTimeout := tokenizerHTTPTimeout
@@ -783,9 +864,192 @@ index 0000000000000000000000000000000000000000..2f0b8cdc8f97bd303aa35bac1dda9d60
 +		t.Fatalf("first check slot picked proxy %d (%s), want proxy B %d", picked.ID, picked.Name, idB)
 +	}
 +}
++
++// PR #71：mode-8（4 Argon/4 Carbon）inner 槽位补齐的防回归。
++// 单轮（streamGenerateOnce）与多轮（streamGenerateConv）共用 argonMode8Slots，
++// 这里直接断言该块的槽位值，以及它对非 mode-8、mode-8 各档的作用范围。
++func TestArgonMode8Slots(t *testing.T) {
++	// 非 mode-8 的 inner 不含补齐槽位：按 streamGenerateOnce/streamGenerateConv 的
++	// 默认值拼一个 3.6-flash 的 inner，逐个核对 PR #71 动的槽位都停在原值。
++	if innerSlots != 99 {
++		t.Fatalf("innerSlots = %d, want 99（PR #71 为 inner[98] 扩容）", innerSlots)
++	}
++	flash := Models["gemini-3.6-flash"]
++	inner := make([]any, innerSlots)
++	inner[6] = []any{0}
++	inner[30] = []any{4}
++	inner[68] = 1
++	inner[79] = flash.Mode
++	inner[80] = flash.thinkWire()
++	inner[91] = 0
++	inner[96] = 0
++	if flash.Mode == 8 {
++		argonMode8Slots(inner)
++	}
++	if inner[49] != nil || inner[83] != nil || inner[98] != nil {
++		t.Errorf("non-mode-8 inner 不应含补齐槽位: [49]=%v [83]=%v [98]=%v", inner[49], inner[83], inner[98])
++	}
++	if got := fmt.Sprint(inner[6]); got != "[0]" {
++		t.Errorf("non-mode-8 inner[6]=%s want [0]", got)
++	}
++	if inner[68] != 1 || inner[91] != 0 {
++		t.Errorf("non-mode-8 inner[68]=%v inner[91]=%v want 1/0", inner[68], inner[91])
++	}
++
++	// mode-8 补齐块按 PR #71 抓包逐槽核对；三档（普通/中/高）都走同一块。
++	for _, name := range []string{"gemini-4-carbon", "gemini-4-carbon-thinking-medium", "gemini-4-carbon-thinking"} {
++		mc := Models[name]
++		inner := make([]any, innerSlots)
++		inner[6] = []any{0}
++		inner[30] = []any{4}
++		inner[68] = 1
++		inner[79] = mc.Mode
++		inner[80] = mc.thinkWire()
++		inner[91] = 0
++		inner[96] = 0
++		if mc.Mode == 8 {
++			argonMode8Slots(inner)
++		}
++		if got := fmt.Sprint(inner[6]); got != "[1]" {
++			t.Errorf("%s inner[6]=%s want [1]", name, got)
++		}
++		if got := fmt.Sprint(inner[30]); got != "[]" {
++			t.Errorf("%s inner[30]=%s want []", name, got)
++		}
++		for i, want := range map[int]int{49: 40, 68: 2, 83: 1, 91: 1, 96: 1, 98: 1} {
++			if inner[i] != want {
++				t.Errorf("%s inner[%d]=%v want %d", name, i, inner[i], want)
++			}
++		}
++		// 补齐块不改思考槽：inner[80] 仍是 thinkWire，header 档位不受影响。
++		if inner[80] != mc.thinkWire() || inner[79] != 8 {
++			t.Errorf("%s inner[79]=%v inner[80]=%v want 8/%d", name, inner[79], inner[80], mc.thinkWire())
++		}
++	}
++
++	// 媒体工具槽位覆盖顺序保持 PR #71 原序：mc.Tool>0 在补齐块之后执行，
++	// Tool 值压过 mode-8 的 inner[49]=40（当前没有 Tool 与 Mode=8 同时存在的型号，防回归）。
++	toolMC := ModelConfig{Mode: 8, Tool: toolImage}
++	toolInner := make([]any, innerSlots)
++	argonMode8Slots(toolInner)
++	if toolMC.Tool > 0 {
++		toolInner[49] = toolMC.Tool
++	}
++	if toolInner[49] != toolImage {
++		t.Errorf("Tool 覆盖后 inner[49]=%v want %d", toolInner[49], toolImage)
++	}
++}
++
++// 4 Hydrogen：3.8 Flash 槽位（hexFlash38 / Mode=1）2026-11 原位升级。三档表项、登录门控、
++// 以及 strict_model 降级判定（明确请求 Hydrogen 收到 Flash 族自报一律算降级；
++// 旧配置请求 3.8 Flash 收到 4 Hydrogen 算同槽升级）。
++func TestHydrogenModelsAndDowngrade(t *testing.T) {
++	low := Models["gemini-4-hydrogen"]
++	med := Models["gemini-4-hydrogen-thinking-medium"]
++	high := Models["gemini-4-hydrogen-thinking"]
++	if low.HexID != hexFlash38 || low.Mode != 1 || low.Upstream != "4 Hydrogen" || low.Thinking || low.ThinkWire != 0 ||
++		med.HexID != hexFlash38 || med.Mode != 1 || med.ThinkWire != thinkingMedium || med.Thinking ||
++		high.HexID != hexFlash38 || high.Mode != 1 || !high.Thinking ||
++		Models["gemini-3.8-flash-thinking-medium"].ThinkWire != thinkingMedium {
++		t.Fatalf("unexpected Hydrogen model table: low=%+v med=%+v high=%+v", low, med, high)
++	}
++	if !modelNeedsLogin(low) || !modelNeedsLogin(med) || !modelNeedsLogin(high) {
++		t.Fatal("hydrogen models should require login (hexFlash38 slot)")
++	}
++	for _, name := range []string{"gemini-4-hydrogen", "gemini-4-hydrogen-thinking-medium", "gemini-4-hydrogen-thinking"} {
++		if _, ok := availableModels()[name]; ok {
++			t.Fatalf("%s should not be available without cookie", name)
++		}
++	}
++	withPoolCookie(t)
++	for _, name := range []string{"gemini-4-hydrogen", "gemini-4-hydrogen-thinking-medium", "gemini-4-hydrogen-thinking"} {
++		if _, ok := availableModels()[name]; !ok {
++			t.Fatalf("%s should be available when pool cookie exists", name)
++		}
++	}
++
++	for _, c := range []struct {
++		model, reported string
++		want            bool
++	}{
++		{"gemini-4-hydrogen", "4 Hydrogen", false},
++		{"gemini-4-hydrogen", "4 Hydrogen Medium", false},
++		{"gemini-4-hydrogen", "4 Hydrogen High", false},
++		{"gemini-4-hydrogen-thinking-medium", "4 Hydrogen Medium", false},
++		{"gemini-4-hydrogen-thinking", "4 Hydrogen High", false},
++		{"gemini-4-hydrogen-thinking", "Gemini 4 Hydrogen High", false},
++		{"gemini-4-hydrogen", "3.8 Flash", true},
++		{"gemini-4-hydrogen", "3.7 Flash", true},
++		{"gemini-4-hydrogen", "3.6 Flash", true},
++		{"gemini-4-hydrogen", "3.5 Flash-Lite", true},
++		{"gemini-4-hydrogen-thinking", "3.8 Flash", true},
++		// 旧配置仍请求 3.8 Flash，上游自报新名 = 同槽升级，不算降级；掉到其它 Flash 仍算。
++		{"gemini-3.8-flash", "4 Hydrogen", false},
++		{"gemini-3.8-flash", "4 Hydrogen High", false},
++		{"gemini-3.8-flash", "Gemini 4 Hydrogen", false},
++		{"gemini-3.8-flash-thinking", "4 Hydrogen High", false},
++		{"gemini-3.8-flash", "3.6 Flash", true},
++		{"gemini-3.8-flash", "3.5 Flash-Lite", true},
++		// 反向：请求 Hydrogen 收到 3.8 Flash 不是升级。
++		{"gemini-4-hydrogen", "Gemini 3.8 Flash", true},
++	} {
++		if got := modelDowngraded(Models[c.model], c.reported); got != c.want {
++			t.Errorf("modelDowngraded(%s, %q)=%v want %v", c.model, c.reported, got, c.want)
++		}
++	}
++}
++
++// phantomCleanup（#phantom 幽灵会话根治）：带附件/Mode-8 时服务端无视 inner[45]=1
++// 照样在侧栏落「打不开」的索引残片，旧版只在 AutoDeleteConversation && 200 成功时删，
++// 取消/超时/出错的路径全漏。这里断言三点：
++//  1. feed 能从 raw 帧里提取 cid（含「只有 cid 没有正文」的幽灵帧）；
++//  2. 条件不满足（无 cookie / multi_turn）时 enabled=false，整体 no-op；
++//  3. enabled 时 flush 会把收集到的 cid 各发一次 GzXR5e（用打桩的 deleteConversation 计）。
++func TestPhantomCleanupGateAndCollect(t *testing.T) {
++	frame := `[["wrb.fr","A","[null,[\"c_deadbeef1234abcd\"],null,4]",null,"generic"]]`
++	// 纯文本（无附件）temporary_chat 下，服务端也可能回 cid —— 一并删无害。
++	if got := convIDInLine(frame); got != "c_deadbeef1234abcd" {
++		t.Fatalf("convIDInLine=%q want c_deadbeef1234abcd", got)
++	}
++	if got := extractConversationID(frame); got != "c_deadbeef1234abcd" {
++		t.Fatalf("extractConversationID=%q", got)
++	}
++
++	// 条件关闭：multi_turn 开着时必须不动（会话留给续接）。
++	saveRt := rtVal
++	defer func() { rtMu.Lock(); rtVal = saveRt; rtMu.Unlock() }()
++	setRT := func(temp, autodel, multi bool) {
++		rtMu.Lock()
++		rtVal.TemporaryChat, rtVal.AutoDeleteConversation, rtVal.MultiTurn = temp, autodel, multi
++		rtMu.Unlock()
++	}
++	setRT(true, false, true) // temporary+multi → multi 优先，关
++	if p := phantomCleanupFunc("ck", "sa", "xs", "", 0); p.enabled {
++		t.Fatal("multi_turn on should disable phantom cleanup")
++	}
++	setRT(true, false, false) // temporary only → 开
++	p := phantomCleanupFunc("ck", "sa", "xs", "", 0)
++	if !p.enabled {
++		t.Fatal("temporary_chat should enable phantom cleanup")
++	}
++	p.feed(frame)
++	p.feed(`[["wrb.fr","A","[null,[\"c_deadbeef1234abcd\"],null]",null,"generic"]]` + "\n" + frame) // dup
++	if len(p.cids) != 1 {
++		t.Fatalf("dedup failed, cids=%v", p.cids)
++	}
++	p.feed("not a frame\nplain text")
++	if len(p.cids) != 1 {
++		t.Fatal("non-frame lines must not add cids")
++	}
++	// xsrf 缺失 → no-op（删不了，不浪费 RPC）。
++	setRT(false, true, false)
++	if p2 := phantomCleanupFunc("ck", "sa", "", "", 0); p2.enabled {
++		t.Fatal("missing xsrf should disable")
++	}
++}
 diff --git a/internal/app/argon_timing_probe_test.go b/internal/app/argon_timing_probe_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..fb1ccec78a19896b0bf4ec1ffc3f97e957beb4f4
+index 0000000..fb1ccec
 --- /dev/null
 +++ b/internal/app/argon_timing_probe_test.go
 @@ -0,0 +1,74 @@
@@ -865,7 +1129,7 @@ index 0000000000000000000000000000000000000000..fb1ccec78a19896b0bf4ec1ffc3f97e9
 +}
 diff --git a/internal/app/cancel_test.go b/internal/app/cancel_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..f36c70005e6da66df26dd934271c0d9646faa9f2
+index 0000000..f36c700
 --- /dev/null
 +++ b/internal/app/cancel_test.go
 @@ -0,0 +1,106 @@
@@ -976,7 +1240,7 @@ index 0000000000000000000000000000000000000000..f36c70005e6da66df26dd934271c0d96
 +	t.Fatal("没有记录这次请求")
 +}
 diff --git a/internal/app/client.go b/internal/app/client.go
-index c63b3a9fabbf1fe2f141a05def3f9947dff32ca3..da8ccb8ff683903907e7159bea42268c299e2793 100644
+index c63b3a9..da8ccb8 100644
 --- a/internal/app/client.go
 +++ b/internal/app/client.go
 @@ -1,9 +1,11 @@
@@ -1196,7 +1460,7 @@ index c63b3a9fabbf1fe2f141a05def3f9947dff32ca3..da8ccb8ff683903907e7159bea42268c
 +	setChromeHeaders(req.Header)
  }
 diff --git a/internal/app/client_timeout_test.go b/internal/app/client_timeout_test.go
-index 94c0b7097137d057c85cc98df7fbebbf16207b46..2a4b697e943f58c55c33e2af48033853cbcc516a 100644
+index 94c0b70..2a4b697 100644
 --- a/internal/app/client_timeout_test.go
 +++ b/internal/app/client_timeout_test.go
 @@ -1,6 +1,12 @@
@@ -1308,8 +1572,33 @@ index 94c0b7097137d057c85cc98df7fbebbf16207b46..2a4b697e943f58c55c33e2af48033853
 +		c.Close()
 +	}
 +}
+diff --git a/internal/app/config.go b/internal/app/config.go
+index 2983429..a871e97 100644
+--- a/internal/app/config.go
++++ b/internal/app/config.go
+@@ -43,7 +43,10 @@ type Config struct {
+ 	// 是否走 Gemini 原生 conversation_id 服务端多轮。默认 false，见 conversation.go。
+ 	MultiTurn bool `json:"multi_turn"`
+ 	// 出完结果是否自动删掉 gemini.google.com 上留下的这条会话（#19，rpc GzXR5e）。
+-	// 只登录态生效（删除要 XSRF）；异步 best-effort，删失败只记日志不影响响应。默认 false。
++	// 只登录态生效（删除要 XSRF）；异步 best-effort，删失败只记日志不影响响应。默认 true：
++	// temporary_chat(inner[45]=1) 在带附件/Mode-8 时仍会被服务端落「打不开」的索引残片
++	// （#phantom），光靠它不够，得 create-then-delete 双保险；配合 streamGenerateOnce 的
++	// phantomCleanup（取消/超时/出错也删）覆盖全路径。
+ 	AutoDeleteConversation bool `json:"auto_delete_conversation"`
+ 	// 匿名优先（#20）：这次请求不需要登录态能力（纯文本、非思考、无工具、无图）时
+ 	// 不占用 cookie 账号，走匿名省额度；需要登录才挑号。默认 false。见 modelNeedsLogin。
+@@ -111,7 +114,7 @@ func defaultConfig() Config {
+ 		// 135,990 字节各 1/3，141,920 字节各 1/3。取 128000 留一点余量。
+ 		MaxPromptBytes:         128000,
+ 		MultiTurn:              false,
+-		AutoDeleteConversation: false,
++		AutoDeleteConversation: true,
+ 		AnonFirst:              false,
+ 		TemporaryChat:          false,
+ 		ImageUpscale:           false,
 diff --git a/internal/app/context_file.go b/internal/app/context_file.go
-index 97995a2f0ebb7626512590a23da1bc3f6fc97e3b..ba031401e77e479ebb33cc3a7868c904c7cb42ea 100644
+index 97995a2..ba03140 100644
 --- a/internal/app/context_file.go
 +++ b/internal/app/context_file.go
 @@ -1,6 +1,7 @@
@@ -1388,7 +1677,7 @@ index 97995a2f0ebb7626512590a23da1bc3f6fc97e3b..ba031401e77e479ebb33cc3a7868c904
 +	return promptParts{body: parts}.join()
  }
 diff --git a/internal/app/conversation.go b/internal/app/conversation.go
-index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3dc5113cac 100644
+index 13859ec..a8514a7 100644
 --- a/internal/app/conversation.go
 +++ b/internal/app/conversation.go
 @@ -1,6 +1,7 @@
@@ -1428,7 +1717,17 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  	p, slotOK, slotErr := acquireSlot(conv.proxyID)
  	if !slotOK {
  		return &StreamResult{}, slotErr
-@@ -375,12 +375,19 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+@@ -314,6 +314,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+ 	if tw != thinkingNormal {
+ 		inner[96] = 1
+ 	}
++	if mc.Mode == 8 {
++		argonMode8Slots(inner)
++	}
+ 
+ 	innerJSON, _ := json.Marshal(inner)
+ 	outerJSON, _ := json.Marshal([]interface{}{nil, string(innerJSON)})
+@@ -375,12 +378,19 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
  	t0 := time.Now()
  	var lastErr error
  	for attempt := 0; attempt < rtCfg().RetryAttempts; attempt++ {
@@ -1449,7 +1748,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  		// 降级：同一个号重试还是降级，直接交给上层（见 gemini.go 同一处）。
  		var mde *ModelDowngradedError
  		if errors.As(err, &mde) {
-@@ -389,6 +396,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+@@ -389,6 +399,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
  				Emitted: tracker.emitted, EmittedReasoning: rtracker.emitted}, err
  		}
  		if err != nil || statusCode != 200 || !hasContentFrame(string(raw)) {
@@ -1459,7 +1758,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  			if err == nil && statusCode == 200 {
  				lastErr = fmt.Errorf("续接无内容帧（会话可能已失效，raw %d 字节）", len(raw))
  			} else if err != nil {
-@@ -411,7 +421,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+@@ -411,7 +424,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
  				if errors.Is(err, errUpstreamFailureReply) {
  					logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, err)
  				}
@@ -1470,7 +1769,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  			}
  			continue
  		}
-@@ -423,7 +435,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+@@ -423,7 +438,9 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, lastErr)
@@ -1481,7 +1780,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  			}
  			continue
  		}
-@@ -464,7 +478,7 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
+@@ -464,7 +481,7 @@ func streamGenerateConv(prompt string, mc ModelConfig, conv *convState,
  //   - 没命中 → 新建会话，首轮发全量拼接的历史（含 tools 指令，把当前上下文交给服务端）。
  //
  // 支持 tools（续接里也解析 ```tool_call``` 围栏）；图片走原单轮路径（callGemini）。
@@ -1490,7 +1789,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  	tools []map[string]interface{}, toolChoice interface{},
  	onDelta, onReasoning func(string)) (string, []ToolCall, *StreamResult, error) {
  	parentKey := convParentKey(messages)
-@@ -515,7 +529,7 @@ func callGeminiConv(messages []map[string]interface{}, mc ModelConfig,
+@@ -515,7 +532,7 @@ func callGeminiConv(messages []map[string]interface{}, mc ModelConfig,
  				}
  			}
  		}
@@ -1500,7 +1799,7 @@ index 13859ec746b8e49204f63efda517f05453bdec8b..7dcb59c6418a946fbc24d9f926f80d3d
  			break
  		}
 diff --git a/internal/app/cookie_pool.go b/internal/app/cookie_pool.go
-index 60fe35fe0664c2feeb9d9d811be01c6d3323799c..14e5a44734cdd50be933af1cf8387a65500ab3aa 100644
+index 60fe35f..14e5a44 100644
 --- a/internal/app/cookie_pool.go
 +++ b/internal/app/cookie_pool.go
 @@ -565,6 +565,9 @@ func checkAccountCookie(a CookieAccount) CookieCheck {
@@ -1514,7 +1813,7 @@ index 60fe35fe0664c2feeb9d9d811be01c6d3323799c..14e5a44734cdd50be933af1cf8387a65
  	if extractSAPISID(a.Cookie) == "" {
  		detail += "，但缺 SAPISID（算不出授权头，部分接口会被当匿名）"
 diff --git a/internal/app/gemini.go b/internal/app/gemini.go
-index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79626f6c30 100644
+index 242e6bb..f53eebb 100644
 --- a/internal/app/gemini.go
 +++ b/internal/app/gemini.go
 @@ -14,6 +14,7 @@ import (
@@ -1525,7 +1824,76 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  	"time"
  
  	fhttp "github.com/bogdanfinn/fhttp"
-@@ -378,7 +379,7 @@ func (e *pinnedAccountError) Unwrap() error { return e.Err }
+@@ -44,7 +45,22 @@ const (
+ //
+ // 加长本身是安全的：曾经把它从 80 加到 102 来试 inner[79] 会不会复活，结论是不会
+ // —— 模型选择完全由 x-goog-ext-525001261-jspb header 决定，长度不影响。
+-const innerSlots = 97
++const innerSlots = 99
++
++// 4 Argon（mode 8）：按浏览器 processSession 抓包补齐槽位（protobuf 字段 N == inner[N-1]，
++// 2026-11-09 实测）。不补的话付费号上请求会挂起没有回应。BotGuard 槽位 inner[3]/[4] 留空。
++// inner[96] 按抓包恒为 1：mode-8 请求服务端要求该槽为 1，与思考档位无关。
++// 单轮（streamGenerateOnce）与多轮（streamGenerateConv）共用，两条路径发的 inner 必须一致。
++func argonMode8Slots(inner []interface{}) {
++	inner[6] = []interface{}{1}
++	inner[30] = []interface{}{}
++	inner[49] = 40
++	inner[68] = 2
++	inner[83] = 1
++	inner[91] = 1
++	inner[96] = 1
++	inner[98] = 1
++}
+ 
+ // inner[80] / 模型 header 下标 15 的取值：1=普通，2=扩展思考。
+ //
+@@ -127,24 +143,38 @@ var Models = map[string]ModelConfig{
+ 	// gemini-3.7-flash 保留为别名（同 hex）。
+ 	"gemini-3.8-flash": {HexID: hexFlash38, Mode: 1, Upstream: "3.8 Flash", Desc: "3.8 Flash; needs a signed-in PAID Google account (free accounts get downgraded to 3.5 Flash-Lite)"},
+ 	"gemini-3.7-flash": {HexID: hexFlash38, Mode: 1, Upstream: "3.8 Flash", Desc: "alias of gemini-3.8-flash (same hex; Google renamed 3.7→3.8)"},
++	// 4 Hydrogen：Google 2026-11 把同一槽位（hexFlash38 / Mode=1）从 3.8 Flash 原位升级成
++	// "4 Hydrogen"。与 3.8 三条完全同 hex 同 Mode，仅对外名和登记的 Upstream 名不同。
++	// 仍 gate 成要 cookie（modelNeedsLogin 按 hexFlash38 覆盖）。
++	"gemini-4-hydrogen": {HexID: hexFlash38, Mode: 1, Upstream: "4 Hydrogen", Desc: "4 Hydrogen (Everyday help, replaced 3.8 Flash on same slot); needs a signed-in Google account"},
+ 	// 4 Argon（#35）：Mode=8 是真正的选择开关（见 hexArgon4 注释）。付费/Ultra 号专属，
+ 	// 免费号发它会被静默降级成 3.5 Flash-Lite，所以 gate 成要 cookie（modelNeedsLogin）。
+ 	"gemini-4-argon": {HexID: hexArgon4, Mode: 8, Upstream: "4 Argon", Desc: "4 Argon (complex tasks); needs a signed-in PAID/Ultra Google account (free accounts get downgraded to 3.5 Flash-Lite)"},
++	// 4 Carbon：Google 2026-11 起把同一槽位（hexArgon4 / Mode=8）的显示名原位改名
++	// "4 Argon" → "4 Carbon"。与 argon 三条完全同配，仅对外名和登记的 Upstream 名不同。
++	"gemini-4-carbon": {HexID: hexArgon4, Mode: 8, Upstream: "4 Carbon", Desc: "4 Carbon (renamed 4 Argon, same slot); needs a signed-in PAID/Ultra Google account"},
+ 
+ 	// 扩展思考版。inner[80]=2 跟模型 hex 正交，都能开；但只在登录态生效，
+ 	// 所以跟 3.1 Pro 一样在没 cookie 时不暴露。
+-	"gemini-3.6-flash-thinking":      {HexID: hexFlash36, Mode: 1, Thinking: true, Upstream: "3.6 Flash", Desc: "3.6 Flash with extended thinking; needs a signed-in cookie"},
+-	"gemini-3.5-flash-lite-thinking": {HexID: hexFlashLite, Mode: 6, Thinking: true, Upstream: "3.5 Flash-Lite", Desc: "3.5 Flash-Lite with extended thinking; needs a signed-in cookie"},
+-	"gemini-3.1-pro-thinking":        {HexID: hexPro31, Mode: 3, Thinking: true, Upstream: "3.1 Pro", Desc: "3.1 Pro with extended thinking; needs a signed-in cookie"},
+-	"gemini-3.8-flash-thinking":      {HexID: hexFlash38, Mode: 1, Thinking: true, Upstream: "3.8 Flash", Desc: "3.8 Flash with extended thinking; needs a signed-in cookie"},
+-	"gemini-3.7-flash-thinking":      {HexID: hexFlash38, Mode: 1, Thinking: true, Upstream: "3.8 Flash", Desc: "alias of gemini-3.8-flash-thinking"},
++	"gemini-3.6-flash-thinking":        {HexID: hexFlash36, Mode: 1, Thinking: true, Upstream: "3.6 Flash", Desc: "3.6 Flash with extended thinking; needs a signed-in cookie"},
++	"gemini-3.5-flash-lite-thinking":   {HexID: hexFlashLite, Mode: 6, Thinking: true, Upstream: "3.5 Flash-Lite", Desc: "3.5 Flash-Lite with extended thinking; needs a signed-in cookie"},
++	"gemini-3.1-pro-thinking":          {HexID: hexPro31, Mode: 3, Thinking: true, Upstream: "3.1 Pro", Desc: "3.1 Pro with extended thinking; needs a signed-in cookie"},
++	"gemini-3.8-flash-thinking":        {HexID: hexFlash38, Mode: 1, Thinking: true, Upstream: "3.8 Flash", Desc: "3.8 Flash with extended thinking; needs a signed-in cookie"},
++	"gemini-3.7-flash-thinking":        {HexID: hexFlash38, Mode: 1, Thinking: true, Upstream: "3.8 Flash", Desc: "alias of gemini-3.8-flash-thinking"},
++	"gemini-3.8-flash-thinking-medium": {HexID: hexFlash38, Mode: 1, ThinkWire: thinkingMedium, Upstream: "3.8 Flash", Desc: "3.8 Flash at the Medium thinking tier; needs a signed-in Google account"},
+ 	// 4 Argon + 扩展思考：Mode=8（选 Argon）+ inner[80]=2（上游现在把这档叫 "High"）。
+ 	// 实测回报 "4 Argon High" 且带思考链（硬题 985 字符，走既有 [4][0][37][0][0] 路径，
+ 	// 无需改抽取代码）→ 映射成 reasoning_content。付费/Ultra 专属。
+ 	"gemini-4-argon-thinking": {HexID: hexArgon4, Mode: 8, Thinking: true, Upstream: "4 Argon", Desc: "4 Argon with extended thinking (High reasoning tier); emits reasoning_content; needs a signed-in PAID/Ultra account"},
+ 	// 中档：think 线值 4（高档是 2）。中档思考在服务端内部完成、不吐思考链，所以不设
+ 	// Thinking（不期望 reasoning_content），登录门控靠 hexArgon4 + thinkWire。
+-	"gemini-4-argon-thinking-medium": {HexID: hexArgon4, Mode: 8, ThinkWire: thinkingMedium, Upstream: "4 Argon", Desc: "4 Argon at the Medium thinking tier (thinks server-side, no reasoning_content); needs a signed-in PAID/Ultra account"},
++	"gemini-4-argon-thinking-medium":  {HexID: hexArgon4, Mode: 8, ThinkWire: thinkingMedium, Upstream: "4 Argon", Desc: "4 Argon at the Medium thinking tier (thinks server-side, no reasoning_content); needs a signed-in PAID/Ultra account"},
++	"gemini-4-carbon-thinking":        {HexID: hexArgon4, Mode: 8, Thinking: true, Upstream: "4 Carbon", Desc: "4 Carbon with extended thinking (High tier); emits reasoning_content; needs a signed-in PAID/Ultra account"},
++	"gemini-4-carbon-thinking-medium": {HexID: hexArgon4, Mode: 8, ThinkWire: thinkingMedium, Upstream: "4 Carbon", Desc: "4 Carbon at the Medium thinking tier; needs a signed-in PAID/Ultra account"},
++	// 4 Hydrogen 思考档：与 3.8 Flash 同槽位（hexFlash38 / Mode=1），高档自报 "4 Hydrogen High"
++	// 并吐思考链，中档 think 线值 thinkingMedium、服务端内部思考不吐链。
++	"gemini-4-hydrogen-thinking":        {HexID: hexFlash38, Mode: 1, Thinking: true, Upstream: "4 Hydrogen", Desc: "4 Hydrogen with extended thinking (High tier); emits reasoning_content; needs a signed-in Google account"},
++	"gemini-4-hydrogen-thinking-medium": {HexID: hexFlash38, Mode: 1, ThinkWire: thinkingMedium, Upstream: "4 Hydrogen", Desc: "4 Hydrogen at the Medium thinking tier (thinks server-side, no reasoning_content); needs a signed-in Google account"},
+ 
+ 	// 媒体生成。inner[49] 一填，服务端换后端模型出图/出乐；产物走 hNvQHb + 下载 host
+ 	// 取回，以 base64 data URL 塞进 content 返回。都要登录态，没 cookie 时不暴露。
+@@ -378,7 +408,7 @@ func (e *pinnedAccountError) Unwrap() error { return e.Err }
  // 自己做。一旦已经吐过内容就不再重试——重试会让客户端收到重复文本。
  func streamGenerate(prompt, latest string, mc ModelConfig,
  	onDelta, onReasoning func(string)) (*StreamResult, error) {
@@ -1534,7 +1902,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  }
  
  // fileRef 是一个已上传附件的引用。
-@@ -393,15 +394,23 @@ type fileRef struct {
+@@ -393,15 +423,23 @@ type fileRef struct {
  //
  // 附件填 inner[0][3]，形状 [[[ref, 1], "文件名"], …]。附件只在登录态可用：
  // 匿名能把文件传上去，但对话里一引用就被服务端回 1100。
@@ -1561,7 +1929,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		var exhausted *ModelDowngradedError
  		if try > 0 && errors.As(nextErr, &exhausted) && exhausted.Reported == "" {
  			// 换号时已经没号可挑：报上一个号真实的降级（带自报模型名），补上解冻时间
-@@ -419,8 +428,8 @@ func streamGenerateWithFiles(prompt, latest string, mc ModelConfig, pending []pe
+@@ -419,8 +457,8 @@ func streamGenerateWithFiles(prompt, latest string, mc ModelConfig, pending []pe
  	return res, err
  }
  
@@ -1572,7 +1940,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  	var files []fileRef
  
  	// 先挑号，再按它上次绑的出口挑代理 —— 同一个账号要尽量固定从同一个 IP 出去，
-@@ -430,6 +439,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -430,6 +468,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	// 不发请求，真正发请求的是下面的 getXSRF，它在拿到 slot 之后。
  	// #20 匿名优先：不需要登录态能力时不占用 cookie 账号，走匿名省额度（见 anonFirstEligible）。
  	// 带附件（图/视频）时不能走匿名——下面 uploadBytes 那段会因 cookieStr=="" 直接报错。
@@ -1582,7 +1950,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  	var acct *CookieAccount
  	skip := exclude
  	if mc.PinAccountID > 0 {
-@@ -487,6 +499,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -487,6 +528,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	// 每个号只给一次「轮转后重试」的机会，避免在一个请求里反复打 accounts.google.com
  	rotatedOnce := map[int64]bool{}
  	for acct != nil && len(tried) < maxCookieTries {
@@ -1592,7 +1960,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		tried[acct.ID] = true
  		// 归属先记上：这一轮失败了也留痕，面板上看得出是哪个号在坏
  		cookieID, cookieLabel = acct.ID, accountDisplayName(acct)
-@@ -583,7 +598,10 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -583,7 +627,10 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  		}
  		nImg, nVid := 0, 0
  		for _, u := range pending {
@@ -1604,7 +1972,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			if uerr != nil {
  				return attrib(fmt.Errorf("上传附件 %s 失败: %w", u.Name, uerr))
  			}
-@@ -600,7 +618,10 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -600,7 +647,10 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	// prompt 超长时转成文本附件。要等挑完号和出口才能做：上传要 cookie，
  	// 而且必须走跟正式请求同一个出口。
  	budget := rtCfg().MaxPromptBytes
@@ -1616,7 +1984,17 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		return attrib(ferr)
  	} else if used {
  		prompt = p
-@@ -728,49 +749,27 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -677,6 +727,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+ 	if tw != thinkingNormal {
+ 		inner[96] = 1
+ 	}
++	if mc.Mode == 8 {
++		argonMode8Slots(inner)
++	}
+ 	// 媒体工具开关。填了服务端就换后端模型出图/出乐（响应里带产物引用，字节要另取）。
+ 	if mc.Tool > 0 {
+ 		inner[49] = mc.Tool
+@@ -728,49 +781,48 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	xsrfRetried := false // XSRF 自愈只做一次，避免死循环
  	t0 := time.Now()
  
@@ -1671,6 +2049,27 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		HexID: mc.HexID, Mode: mc.Mode, Think: mc.thinkWire(),
  		Cookie: cookieStr, SAPISID: sapisid, AuthUser: authUser,
  	}
++
++	// 幽灵会话根治（#phantom）：temporary_chat（inner[45]=1）在带附件（超长 prompt 转
++	// message.txt，inner[0][3] 有文件引用）或 Mode=8 等场景下**不能**阻止服务端建会话
++	// —— 实测服务端仍返回非空 c_xxx 并在侧栏留下「带未读蓝点、hNvQHb 报 1167 打不开」的
++	// 索引残片。它们不在 MaZiqc 常规列表里（RPC 看不到、delete 却能删），是服务端索引
++	// 与正文不一致的残留。
++	//
++	// 旧逻辑两处漏洞让它漏网：
++	//   1) 只在 rtCfg().AutoDeleteConversation 为真时才删，而它默认 false、且
++	//      temporaryChatEligible() 为真时整条被跳过 —— 幽灵恰恰在 temporary_chat 开着时产生；
++	//   2) 只在 200 成功分支里删。客户端中途取消（499）、上游超时、出错话术等任何提前
++	//      return 的路径，即便 raw 首帧已带回 c_xxx，也直接走了，残片留在账号里。
++	//
++	// 修法：cleanupPhantom 挂在 retry 循环**外**，每次 streamGenerateOnce 返回前统一执行。
++	// 条件：(TemporaryChat||AutoDeleteConversation) && !MultiTurn && 有 cookie —— 只要本次
++	// 收集到的任一 raw 帧里提取出 c_xxx，就异步 GzXR5e 删掉。成功帧、取消帧、错误帧都管。
++	// 无害性：正常会话不会被误删 —— 该条件本身就意味着「这条会话不该留在账号里」，删掉它
++	// 正是本意；multi_turn 开着时这个函数整体不生效（会话要留给续接）。
++	phantomCleanup := phantomCleanupFunc(cookieStr, sapisid, xsrfToken, proxyURL, authUser)
++	defer phantomCleanup.flush()
++
  	for attempt := 0; attempt < rtCfg().RetryAttempts; attempt++ {
 +		if err := ctx.Err(); err != nil {
 +			return attrib(err)
@@ -1678,7 +2077,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		var statusCode int
  		var raw []byte
  		var ttfb int64
-@@ -778,9 +777,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -778,9 +830,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  		var err error
  		if useWC {
  			wcReq.Cookie = cookieStr
@@ -1690,10 +2089,15 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		}
  		if len(setCookie) > 0 && cookieID > 0 {
  			if merged := mergeSetCookie(cookieStr, setCookie); merged != cookieStr {
-@@ -788,6 +787,10 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -788,6 +840,15 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  				updateAccountCookie(cookieID, merged)
  			}
  		}
++		// 每次拿到一段 raw 就喂给 phantomCleanup：流式/非流式/提前 EOF 都覆盖。
++		// raw 可能为 nil（网络层失败），extractConversationID 对空串返回 ""，安全。
++		if len(raw) > 0 {
++			phantomCleanup.feed(string(raw))
++		}
 +		var aie *argonIdentityError
 +		if strictCheck != nil && errors.As(err, &aie) && modelDowngraded(mc, aie.name) {
 +			err = &ModelDowngradedError{Requested: mc.Upstream, Reported: aie.name, AccountID: cookieID}
@@ -1701,7 +2105,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		// 降级不是出口或 cookie 的错，也不该重试：同一个号再发一次还是降级。
  		var mde *ModelDowngradedError
  		if errors.As(err, &mde) {
-@@ -799,6 +802,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -799,6 +860,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			return res, err
  		}
  		if err != nil {
@@ -1711,7 +2115,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			lastErr = err
  			// 出错话术不记进代理健康度：匿名直连也一样出，跟出口无关，算进去会误熔断。
  			if pickedOK && !errors.Is(err, errUpstreamFailureReply) {
-@@ -814,7 +820,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -814,7 +878,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, err)
@@ -1722,7 +2126,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			}
  			continue
  		}
-@@ -843,7 +851,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -843,7 +909,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  				break
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
@@ -1733,7 +2137,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			}
  			continue
  		}
-@@ -871,7 +881,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -871,7 +939,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: 空响应（无内容帧，%d 字节）", attempt+1, rtCfg().RetryAttempts, len(raw))
@@ -1744,7 +2148,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			}
  			continue
  		}
-@@ -883,7 +895,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -883,7 +953,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, lastErr)
@@ -1755,7 +2159,22 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			}
  			continue
  		}
-@@ -949,6 +963,82 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -934,9 +1006,11 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+ 		// #19 自动删会话：出完结果把 gemini.google.com 上留下的这条会话删掉，避免
+ 		// 用户账号里堆一堆。只登录态能删（要 XSRF），异步 best-effort，不影响响应。
+ 		//
+-		// 临时对话（#34）生效时跳过：那条压根没进会话列表，删它是多发一次 RPC 删空气。
+-		// 这正是临时对话比 create-then-delete 省的那一次出站请求。
+-		if rtCfg().AutoDeleteConversation && !temporaryChatEligible() && cookieStr != "" && xsrfToken != "" {
++		// 兜底由 phantomCleanup 统一管（含 temporary_chat 下服务端仍建档的幽灵、以及
++		// 客户端取消/超时时已落库的那条）；这里保留原触发点只是让它在 200 成功时
++		// 立即删、不等 defer。条件放宽为 (AutoDeleteConversation||temporaryChatEligible)
++		// —— 后者开着时幽灵照样产生，旧版「temporary 就不用删」的前提被实测推翻。
++		if (rtCfg().AutoDeleteConversation || temporaryChatEligible()) && cookieStr != "" && xsrfToken != "" {
+ 			if cid := extractConversationID(string(raw)); cid != "" {
+ 				go deleteConversation(cid, cookieStr, sapisid, xsrfToken, proxyURL, authUser)
+ 			}
+@@ -949,6 +1023,82 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	return attrib(lastErr)
  }
  
@@ -1838,7 +2257,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  // upstreamModelRe 匹配响应帧里服务端自报的模型显示名（帧的 [42] 位）。
  // 形如 ...,"fbb127bbb056c959",null,null,"3.6 Flash",true,...
  var upstreamModelRe = regexp.MustCompile(`\\"[0-9a-f]{16}\\",null,null,\\"([^"\\]{1,40})\\"`)
-@@ -1029,10 +1119,125 @@ func setAuthUserHeaders(h map[string]string, authuser int) {
+@@ -1029,10 +1179,125 @@ func setAuthUserHeaders(h map[string]string, authuser int) {
  // 实测号活一两小时就失效 —— 所以这些必须收下来并写回账号。
  func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL string,
  	onLine func(string) error) (int, []byte, int64, []string, error) {
@@ -1965,7 +2384,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  		if err != nil {
  			return 0, nil, 0, nil, err
  		}
-@@ -1040,36 +1245,37 @@ func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL
+@@ -1040,36 +1305,37 @@ func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL
  		for k, v := range headers {
  			req.Header.Set(k, v)
  		}
@@ -2012,7 +2431,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  	}
  	return resp.StatusCode, raw, ttfb, resp.Header.Values("Set-Cookie"), nil
  }
-@@ -1451,6 +1657,7 @@ func probeGemini(prompt, proxyURL string) ProbeResult {
+@@ -1451,6 +1717,7 @@ func probeGemini(prompt, proxyURL string) ProbeResult {
  			res.Diagnostic = "构建请求失败: " + e.Error()
  			return res
  		}
@@ -2021,7 +2440,7 @@ index 242e6bb22ac5170c5a734f1c6ad57934a5a9469b..1e09c80803254bfa8d4af25e4ccd2b79
  			req.Header.Set(k, v)
  		}
 diff --git a/internal/app/gemini_api.go b/internal/app/gemini_api.go
-index 613cf7f45b20193abfcaadc186414f50b904c82e..b24d891546b42b5bcdeddf332b3a3b7ca4ea850e 100644
+index 613cf7f..b24d891 100644
 --- a/internal/app/gemini_api.go
 +++ b/internal/app/gemini_api.go
 @@ -1,6 +1,7 @@
@@ -2097,7 +2516,7 @@ index 613cf7f45b20193abfcaadc186414f50b904c82e..b24d891546b42b5bcdeddf332b3a3b7c
  		if _, ok := err.(*ModelDowngradedError); ok {
  			status = 429
 diff --git a/internal/app/gemini_test.go b/internal/app/gemini_test.go
-index b6830a418c78b045c21d39cb690e2b32542c7262..eb4e02114acdecb78531ad91e72b66d274a6467e 100644
+index b6830a4..eb4e021 100644
 --- a/internal/app/gemini_test.go
 +++ b/internal/app/gemini_test.go
 @@ -16,6 +16,7 @@ func TestModelHeader(t *testing.T) {
@@ -2110,7 +2529,7 @@ index b6830a418c78b045c21d39cb690e2b32542c7262..eb4e02114acdecb78531ad91e72b66d2
  		name, mc, err := resolveModel(c.name)
 diff --git a/internal/app/headers_test.go b/internal/app/headers_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..ef9b476da72bae3cc53c9cd85510a2f1db224a7d
+index 0000000..ef9b476
 --- /dev/null
 +++ b/internal/app/headers_test.go
 @@ -0,0 +1,74 @@
@@ -2190,7 +2609,7 @@ index 0000000000000000000000000000000000000000..ef9b476da72bae3cc53c9cd85510a2f1
 +}
 diff --git a/internal/app/latency_test.go b/internal/app/latency_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..fb778f55c20fe14ce2bac64c1e97ff4182328023
+index 0000000..fb778f5
 --- /dev/null
 +++ b/internal/app/latency_test.go
 @@ -0,0 +1,333 @@
@@ -2528,7 +2947,7 @@ index 0000000000000000000000000000000000000000..fb778f55c20fe14ce2bac64c1e97ff41
 +	}
 +}
 diff --git a/internal/app/main_test.go b/internal/app/main_test.go
-index 38e1a44d97d73524eafc2e67470d17b98a957c3b..e3f7636fd47514cf505abcb765125e48d4e7237d 100644
+index 38e1a44..e3f7636 100644
 --- a/internal/app/main_test.go
 +++ b/internal/app/main_test.go
 @@ -1,9 +1,12 @@
@@ -2587,7 +3006,7 @@ index 38e1a44d97d73524eafc2e67470d17b98a957c3b..e3f7636fd47514cf505abcb765125e48
 +	t.Cleanup(func() { rtMu.Lock(); rtVal.RequestTimeout = saved; rtMu.Unlock() })
 +}
 diff --git a/internal/app/mcp_media.go b/internal/app/mcp_media.go
-index acb113196d65f76745f816e2c1a9579884384774..a8bab02191b7fc8ae47afa59fce3744fe11f875b 100644
+index acb1131..a8bab02 100644
 --- a/internal/app/mcp_media.go
 +++ b/internal/app/mcp_media.go
 @@ -1,6 +1,7 @@
@@ -2608,7 +3027,7 @@ index acb113196d65f76745f816e2c1a9579884384774..a8bab02191b7fc8ae47afa59fce3744f
  		return nil, err
  	}
 diff --git a/internal/app/media.go b/internal/app/media.go
-index ec3b6e499aab0bbe4adc1e3ad517e2c9296e9c46..07f316410de88d6c3bae7435344e31fdcfc35157 100644
+index ec3b6e4..683818a 100644
 --- a/internal/app/media.go
 +++ b/internal/app/media.go
 @@ -762,6 +762,7 @@ func mediaGetOnce(rawURL string, headers map[string]string, proxyURL string) (in
@@ -2619,8 +3038,145 @@ index ec3b6e499aab0bbe4adc1e3ad517e2c9296e9c46..07f316410de88d6c3bae7435344e31fd
  	for k, v := range headers {
  		req.Header.Set(k, v)
  	}
+@@ -794,38 +795,113 @@ func flattenFHeaders(h fhttp.Header) map[string]string {
+ // 取回音乐/视频产物要用它去 hNvQHb 拿这次生成的历史。
+ func extractConversationID(raw string) string {
+ 	for _, line := range strings.Split(raw, "\n") {
+-		line = strings.TrimSpace(line)
+-		if !strings.HasPrefix(line, "[[") {
++		if c := convIDInLine(line); c != "" {
++			return c
++		}
++	}
++	return ""
++}
++
++// convIDInLine 从单行 wrb.fr 里取会话 id，取不到返回 ""。
++func convIDInLine(line string) string {
++	line = strings.TrimSpace(line)
++	if !strings.HasPrefix(line, "[[") {
++		return ""
++	}
++	var arr []interface{}
++	if json.Unmarshal([]byte(line), &arr) != nil {
++		return ""
++	}
++	for _, it := range arr {
++		row, ok := it.([]interface{})
++		if !ok || len(row) < 3 || row[0] != "wrb.fr" {
+ 			continue
+ 		}
+-		var arr []interface{}
+-		if json.Unmarshal([]byte(line), &arr) != nil {
++		payload, ok := row[2].(string)
++		if !ok {
+ 			continue
+ 		}
+-		for _, it := range arr {
+-			row, ok := it.([]interface{})
+-			if !ok || len(row) < 3 || row[0] != "wrb.fr" {
+-				continue
+-			}
+-			payload, ok := row[2].(string)
+-			if !ok {
+-				continue
+-			}
+-			var inner []interface{}
+-			if json.Unmarshal([]byte(payload), &inner) != nil || len(inner) < 2 {
+-				continue
+-			}
+-			meta, ok := inner[1].([]interface{})
+-			if ok && len(meta) > 0 {
+-				if cid, ok := meta[0].(string); ok && cid != "" {
+-					return cid
+-				}
+-			}
++		var inner []interface{}
++		if json.Unmarshal([]byte(payload), &inner) != nil || len(inner) < 2 {
++			continue
++		}
++		if cid, _ := convIDFromPayload(inner); cid != "" {
++			return cid
+ 		}
+ 	}
+ 	return ""
+ }
+ 
++// convIDFromPayload 从一个已解码的 wrb.fr 内层数组里取 cid（[1][0] 位置）。
++// 幽灵会话的 cid 也在这里 —— 服务端在首帧就写死了它，正文能不能加载是另一回事。
++func convIDFromPayload(inner []interface{}) (string, bool) {
++	meta, ok := inner[1].([]interface{})
++	if !ok || len(meta) == 0 {
++		return "", false
++	}
++	cid, ok := meta[0].(string)
++	if !ok || cid == "" {
++		return "", false
++	}
++	return cid, true
++}
++
++// phantomCleanup 收集一次 streamGenerateOnce 里出现过的所有 cid，收尾统一删。
++//
++// 为什么挂 defer 而不只在 200 分支删：服务端建幽灵会话跟请求结果无关 —— 带附件
++// （message.txt 上溢）或 mode-8 时，temporary_chat(inner[45]=1) 照样被服务端落一条
++// 「hNvQHb 报 1167、打不开」的索引残片。它只认响应帧里的 c_xxx，不认 HTTP 状态。
++// 客户端断开 / 上游超时 / 出错话术等任何 return 路径，只要首帧已带 c_xxx 就要删。
++//
++// 线程安全：feed 只在请求 goroutine 里调，flush 由 defer 在返回前调一次，删是 go 出去
++// 的 best-effort。同一 cid 只删一次（map 去重）。
++type phantomCleanup struct {
++	enabled  bool
++	cids     map[string]bool
++	cookie   string
++	sapisid  string
++	xsrf     string
++	proxy    string
++	authuser int
++}
++
++// phantomCleanupFunc 构造收尾器。条件：(TemporaryChat||AutoDeleteConversation) &&
++// !MultiTurn && cookie!="" —— 这就是「这条会话本来就不该留在账号里」的充要条件。
++// multi_turn 开着时整个返回 no-op（会话要留给续接）。xsrf 拿不到时也退化成 no-op。
++func phantomCleanupFunc(cookie, sapisid, xsrf, proxyURL string, authuser int) *phantomCleanup {
++	p := &phantomCleanup{cookie: cookie, sapisid: sapisid, xsrf: xsrf, proxy: proxyURL, authuser: authuser}
++	p.enabled = (rtCfg().TemporaryChat || rtCfg().AutoDeleteConversation) && !rtCfg().MultiTurn && cookie != "" && xsrf != ""
++	return p
++}
++
++// feed 吃进一段 raw 响应（可多次调，每次一段）。cid 提取即存即去重。
++func (p *phantomCleanup) feed(raw string) {
++	if !p.enabled || raw == "" {
++		return
++	}
++	for _, line := range strings.Split(raw, "\n") {
++		if c := convIDInLine(line); c != "" {
++			if p.cids == nil {
++				p.cids = map[string]bool{}
++			}
++			p.cids[c] = true
++			break // 一行一个 payload，拿到就换下一行
++		}
++	}
++}
++
++// flush 在请求返回前调一次，把收集到的 cid 逐条 GzXR5e 删掉（异步）。
++// 幂等：多次调用无副作用（map 只在 feed 里写，这里只读）。
++func (p *phantomCleanup) flush() {
++	if !p.enabled || len(p.cids) == 0 {
++		return
++	}
++	for cid := range p.cids {
++		logf("[phantom] 删残留会话 %s", cid)
++		go deleteConversation(cid, p.cookie, p.sapisid, p.xsrf, p.proxy, p.authuser)
++	}
++}
++
+ // artifactSeen 判断这份字节是不是已经收过（按内容比，收掉同图不同 token 的重复）。
+ func artifactSeen(arts []MediaArtifact, data []byte) bool {
+ 	for _, a := range arts {
 diff --git a/internal/app/messages.go b/internal/app/messages.go
-index 1bd5bb4ac780da437deb257d8e9f9f1f33852ede..3d473c4f1a88cd1b40b2c9e75889b66a01740dde 100644
+index 1bd5bb4..3d473c4 100644
 --- a/internal/app/messages.go
 +++ b/internal/app/messages.go
 @@ -49,8 +49,50 @@ type ToolCallFunction struct {
@@ -2814,8 +3370,23 @@ index 1bd5bb4ac780da437deb257d8e9f9f1f33852ede..3d473c4f1a88cd1b40b2c9e75889b66a
  // parseToolChoice 解析 OpenAI 的 tool_choice。
  // 返回 (mode, forcedName)：mode ∈ {"auto","none","required"}；
  // forcedName 非空表示客户端点名了某个函数。
+diff --git a/internal/app/runtime.go b/internal/app/runtime.go
+index e53aad5..b1d80f4 100644
+--- a/internal/app/runtime.go
++++ b/internal/app/runtime.go
+@@ -50,7 +50,9 @@ type RuntimeConfig struct {
+ 	// 默认 false（保持现有"每轮拼全量 prompt"行为）。实测多轮不放大上下文窗口，只让长
+ 	// 对话不撞单请求墙——对 Codex 这类长会话有用，对"喂长文档"没用。
+ 	MultiTurn bool `json:"multi_turn"`
+-	// 出完结果自动删掉 gemini.google.com 上的这条会话（#19）。只登录态生效。默认 false。
++	// 出完结果自动删掉 gemini.google.com 上的这条会话（#19）。只登录态生效。
++	// 默认 true：temporary_chat 不足以防幽灵（带附件/Mode-8 时服务端照样落残片），
++	// create-then-delete 双保险。见 streamGenerateOnce 的 phantomCleanup。
+ 	AutoDeleteConversation bool `json:"auto_delete_conversation"`
+ 	// 匿名优先（#20）：不需要登录态能力的请求（纯文本、非思考、无工具、无图）走匿名、
+ 	// 不占 cookie 账号，省账号额度；需要登录才挑号。默认 false，见 modelNeedsLogin。
 diff --git a/internal/app/server.go b/internal/app/server.go
-index 2dafb80e385f6c6c5a3eb9ef987d2f656e7b407b..ba7b589ab3654714a8b2d1b4e89c145017f99977 100644
+index 2dafb80..ba7b589 100644
 --- a/internal/app/server.go
 +++ b/internal/app/server.go
 @@ -1,6 +1,7 @@
@@ -2939,7 +3510,7 @@ index 2dafb80e385f6c6c5a3eb9ef987d2f656e7b407b..ba7b589ab3654714a8b2d1b4e89c1450
  		if downgraded {
 diff --git a/internal/app/stall_test.go b/internal/app/stall_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..cfdd6cf4e739c9fe50992fae42f7892e538916d9
+index 0000000..cfdd6cf
 --- /dev/null
 +++ b/internal/app/stall_test.go
 @@ -0,0 +1,199 @@
@@ -3143,7 +3714,7 @@ index 0000000000000000000000000000000000000000..cfdd6cf4e739c9fe50992fae42f7892e
 +	}
 +}
 diff --git a/internal/app/strict_model.go b/internal/app/strict_model.go
-index ecc17aceec6f365649ccb84bc9ca04189b524f03..88267c5b550800765d2b50f474e4ba7670bb6efd 100644
+index ecc17ac..75e4a2e 100644
 --- a/internal/app/strict_model.go
 +++ b/internal/app/strict_model.go
 @@ -150,7 +150,8 @@ func strictLineCheck(mc ModelConfig, accountID func() int64) func(line string) e
@@ -3156,8 +3727,28 @@ index ecc17aceec6f365649ccb84bc9ca04189b524f03..88267c5b550800765d2b50f474e4ba76
  }
  
  // modelDowngraded 判断服务端自报的显示名是不是请求的那个模型。
+@@ -164,8 +165,19 @@ func foldModelName(s string) string {
+ func modelDowngraded(mc ModelConfig, reported string) bool {
+ 	want := foldModelName(mc.Upstream)
+ 	got := foldModelName(reported)
++	// Google 原位改名：hex 95a4c0abcba24364 / Mode=8 那个槽位 2026-11 起自报从
++	// "4 Argon" 换成 "4 Carbon"（同 hex、同档、只是名字变了）。两个名字是同一个
++	// 模型，互相不算降级；折成一族后前缀比较照旧，跨档后缀与降级到 Flash 仍判。
++	want = strings.ReplaceAll(want, "carbon", "argon")
++	got = strings.ReplaceAll(got, "carbon", "argon")
+ 	if want == "" || got == "" {
+ 		return false
+ 	}
++	// hexFlash38 / Mode=1 槽位 2026-11 原位升级：显示名 "3.8 Flash" → "4 Hydrogen"
++	// （同 hex、同 Mode，只是名字变了）。是单向升级：请求旧名收到新名算同槽升级、
++	// 不算降级；反过来明确请求 4 Hydrogen 收到 Flash 族自报仍按下面前缀比较判降级。
++	if want == "3.8 flash" && (got == "4 hydrogen" || strings.HasPrefix(got, "4 hydrogen ")) {
++		return false
++	}
+ 	return got != want && !strings.HasPrefix(got, want+" ")
+ }
 diff --git a/internal/app/timeout_retry_test.go b/internal/app/timeout_retry_test.go
-index 77a51151b8c5c17e4fbd23461370ee4bc2507328..b31966a954f0c6c0ca959e0574486e47d8acf9dc 100644
+index 77a5115..b31966a 100644
 --- a/internal/app/timeout_retry_test.go
 +++ b/internal/app/timeout_retry_test.go
 @@ -63,6 +63,9 @@ func TestIsUpstreamTimeout(t *testing.T) {
@@ -3171,7 +3762,7 @@ index 77a51151b8c5c17e4fbd23461370ee4bc2507328..b31966a954f0c6c0ca959e0574486e47
  		fmt.Errorf("upstream returned no content frame (raw 216 bytes)")} {
  		if isUpstreamTimeout(e) {
 diff --git a/internal/app/tokenizer.go b/internal/app/tokenizer.go
-index 634f3b76c1ceea03f540e4c2fc5e3a9ca53ccd2b..399057e5ab5e62120094454e2e81da6b12c0d8d8 100644
+index 634f3b7..399057e 100644
 --- a/internal/app/tokenizer.go
 +++ b/internal/app/tokenizer.go
 @@ -1,9 +1,17 @@
@@ -3306,7 +3897,7 @@ index 634f3b76c1ceea03f540e4c2fc5e3a9ca53ccd2b..399057e5ab5e62120094454e2e81da6b
  		if err != nil {
  			fmt.Fprintf(os.Stderr, "[tokenizer] init failed (will fall back to chars/4): %v\n", err)
 diff --git a/internal/app/upload.go b/internal/app/upload.go
-index 4feb5d93c088ed058f1f3b57c2e9ca1dc9c6cab1..a21e8d1e671d12d7523648bc3c0948958fe594a3 100644
+index 4feb5d9..a21e8d1 100644
 --- a/internal/app/upload.go
 +++ b/internal/app/upload.go
 @@ -2,6 +2,7 @@ package app
@@ -3377,7 +3968,7 @@ index 4feb5d93c088ed058f1f3b57c2e9ca1dc9c6cab1..a21e8d1e671d12d7523648bc3c094895
  		req.Header.Set(k, v)
  	}
 diff --git a/internal/app/video_cooldown_test.go b/internal/app/video_cooldown_test.go
-index 8eda49e5f5318f962445c4b08bb33b342f8e2b8f..cf64828c36dcb190fae2e6315573460a9ba4a711 100644
+index 8eda49e..cf64828 100644
 --- a/internal/app/video_cooldown_test.go
 +++ b/internal/app/video_cooldown_test.go
 @@ -2,6 +2,7 @@ package app
@@ -3398,7 +3989,7 @@ index 8eda49e5f5318f962445c4b08bb33b342f8e2b8f..cf64828c36dcb190fae2e6315573460a
  		return "", nil, res, err
  	}
 diff --git a/internal/app/videos.go b/internal/app/videos.go
-index 4ea7ac64d3854396b8339b0d2240a96d7a8e9331..861f72e355a62e191c875e7ea72dbe28d51b556f 100644
+index 4ea7ac6..861f72e 100644
 --- a/internal/app/videos.go
 +++ b/internal/app/videos.go
 @@ -10,6 +10,7 @@ package app
@@ -3428,7 +4019,7 @@ index 4ea7ac64d3854396b8339b0d2240a96d7a8e9331..861f72e355a62e191c875e7ea72dbe28
  			return res, nil
  		}
 diff --git a/internal/app/vision.go b/internal/app/vision.go
-index b0c97245b5e822155b97d5c3b82363dd1cbf27a2..b1ca7cb8d9620d1d295543bd7118f507d32b7980 100644
+index b0c9724..b1ca7cb 100644
 --- a/internal/app/vision.go
 +++ b/internal/app/vision.go
 @@ -160,6 +160,7 @@ func fetchImage(src, proxyURL string, idx int) (pendingUpload, error) {
@@ -3440,7 +4031,7 @@ index b0c97245b5e822155b97d5c3b82363dd1cbf27a2..b1ca7cb8d9620d1d295543bd7118f507
  		if err != nil {
  			return pendingUpload{}, fmt.Errorf("image %d: fetch failed: %w", idx, err)
 diff --git a/internal/app/xsrf.go b/internal/app/xsrf.go
-index 254d686a8f91301427d341f31a08363f4ba6c304..e008abbd2e3e901a8ee7e3b4bde6f1c65833f730 100644
+index 254d686..e008abb 100644
 --- a/internal/app/xsrf.go
 +++ b/internal/app/xsrf.go
 @@ -29,15 +29,23 @@ var (
