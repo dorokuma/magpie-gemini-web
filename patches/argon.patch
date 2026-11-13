@@ -273,80 +273,124 @@ index 0000000..10121c5
 +}
 diff --git a/internal/app/argon_probe_test.go b/internal/app/argon_probe_test.go
 new file mode 100644
-index 0000000..bbc0041
+index 0000000..6875fd0
 --- /dev/null
 +++ b/internal/app/argon_probe_test.go
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,94 @@
 +package app
 +
 +import (
-+ "encoding/json"
-+ "fmt"
-+ "net/url"
-+ "os"
-+ "regexp"
-+ "strings"
-+ "testing"
-+ "time"
-+ "github.com/google/uuid"
++	"encoding/json"
++	"fmt"
++	"github.com/google/uuid"
++	"net/url"
++	"os"
++	"regexp"
++	"strings"
++	"testing"
++	"time"
 +)
 +
 +// Explicitly opted-in local protocol probe. Does not log cookies, tokens, or raw account responses.
 +func TestArgonProtocolProbe(t *testing.T) {
-+ cookie := os.Getenv("ARGON_PROBE_COOKIE")
-+ if cookie == "" { t.Skip("local authenticated probe not enabled") }
-+ dbPath := cfg.DBPath
-+ cfg = defaultConfig(); cfg.DBPath = dbPath; cfg.RequestTimeout = 65
-+ initRuntimeConfig()
-+ page, err := fetchAppPage(cookie, 0, ""); if err != nil { t.Fatal("page fetch failed") }
-+ tok := snlm0eRe.FindSubmatch(page); if len(tok)<2 {t.Fatal("login token unavailable")}
-+ bl := regexp.MustCompile(`"cfb2h":"([^"]+)"`).FindSubmatch(page)
-+ if len(bl)<2 {t.Fatal("build version unavailable")}
-+ headers := buildGeminiHeaders(cookie,extractSAPISID(cookie), "")
-+ delete(headers,"x-goog-ext-525001261-jspb")
-+ freq,_:=json.Marshal([]any{[]any{[]any{"otAQ7b","[]",nil,"generic"}}})
-+ form:=url.Values{"f.req":{string(freq)},"at":{string(tok[1])}}
-+ endpoint:="https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=otAQ7b&hl=en&rt=c&bl="+url.QueryEscape(string(bl[1]))
-+ status,_,catalog,err:=uploadPost(endpoint,headers,[]byte(form.Encode()),"")
-+ if err!=nil {t.Fatal("catalog request failed")}
-+ t.Logf("catalog_status=%d argon_hex_present=%v argon_name_present=%v",status,strings.Contains(string(catalog),"95a4c0abcba24364"),strings.Contains(string(catalog),"Argon"))
-+ if !strings.Contains(string(catalog),"95a4c0abcba24364") {t.Fatal("Argon not confirmed in account catalog")}
-+ if os.Getenv("ARGON_PROBE_CATALOG_ONLY")=="1" { return }
-+ inner:=make([]any,97)
-+ inner[0]=[]any{"Reply with exactly ARGON_OK.",0,nil,nil,nil,nil,0}
-+ inner[1]=[]any{"en"};inner[2]=[]any{"","","",nil,nil,nil,nil,nil,nil,""}
-+ inner[6]=[]any{0};inner[7]=1;inner[10]=1;inner[11]=0;inner[17]=[]any{[]any{0}}
-+ inner[18]=0;inner[27]=1;inner[30]=[]any{4};inner[41]=[]any{1};inner[45]=1
-+ inner[53]=0;inner[59]=uuid.NewString();inner[61]=[]any{};inner[68]=1;inner[79]=8;inner[80]=1;inner[91]=0;inner[96]=0
-+ ib,_:=json.Marshal(inner);outer,_:=json.Marshal([]any{nil,string(ib)})
-+ form=url.Values{"f.req":{string(outer)},"at":{string(tok[1])}}
-+ headers=buildGeminiHeaders(cookie,extractSAPISID(cookie),"95a4c0abcba24364")
-+ headers["x-goog-ext-525001261-jspb"]=buildModelHeader("95a4c0abcba24364",8,1,uuid.NewString())
-+ headers["x-goog-ext-525005358-jspb"]=fmt.Sprintf(`["%s",1]`,inner[59])
-+ endpoint="https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?hl=en&rt=c&bl="+url.QueryEscape(string(bl[1]))
-+ start:=time.Now();status,raw,_,_,err:=doGeminiRequest(endpoint,form.Encode(),headers,"",nil)
-+ if err!=nil {t.Fatalf("generation transport failed (%T)",err)}
-+ actual:=extractUpstreamModel(string(raw));answer:=extractResponseText(string(raw))
-+ t.Logf("generation_status=%d mode=8 think=1 actual_model=%q answer=%q elapsed_ms=%d raw_bytes=%d",status,actual,answer,time.Since(start).Milliseconds(),len(raw))
-+ if status!=200 || !strings.Contains(strings.ToLower(actual),"argon") || strings.TrimSpace(answer)!="ARGON_OK" {t.Fatal("Argon generation not verified")}
++	cookie := os.Getenv("ARGON_PROBE_COOKIE")
++	if cookie == "" {
++		t.Skip("local authenticated probe not enabled")
++	}
++	dbPath := cfg.DBPath
++	cfg = defaultConfig()
++	cfg.DBPath = dbPath
++	cfg.RequestTimeout = 65
++	initRuntimeConfig()
++	page, err := fetchAppPage(cookie, 0, "")
++	if err != nil {
++		t.Fatal("page fetch failed")
++	}
++	tok := snlm0eRe.FindSubmatch(page)
++	if len(tok) < 2 {
++		t.Fatal("login token unavailable")
++	}
++	bl := regexp.MustCompile(`"cfb2h":"([^"]+)"`).FindSubmatch(page)
++	if len(bl) < 2 {
++		t.Fatal("build version unavailable")
++	}
++	headers := buildGeminiHeaders(cookie, extractSAPISID(cookie), "")
++	delete(headers, "x-goog-ext-525001261-jspb")
++	freq, _ := json.Marshal([]any{[]any{[]any{"otAQ7b", "[]", nil, "generic"}}})
++	form := url.Values{"f.req": {string(freq)}, "at": {string(tok[1])}}
++	endpoint := "https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=otAQ7b&hl=en&rt=c&bl=" + url.QueryEscape(string(bl[1]))
++	status, _, catalog, err := uploadPost(endpoint, headers, []byte(form.Encode()), "")
++	if err != nil {
++		t.Fatal("catalog request failed")
++	}
++	t.Logf("catalog_status=%d argon_hex_present=%v argon_name_present=%v", status, strings.Contains(string(catalog), "95a4c0abcba24364"), strings.Contains(string(catalog), "Argon"))
++	if !strings.Contains(string(catalog), "95a4c0abcba24364") {
++		t.Fatal("Argon not confirmed in account catalog")
++	}
++	if os.Getenv("ARGON_PROBE_CATALOG_ONLY") == "1" {
++		return
++	}
++	inner := make([]any, 97)
++	inner[0] = []any{"Reply with exactly ARGON_OK.", 0, nil, nil, nil, nil, 0}
++	inner[1] = []any{"en"}
++	inner[2] = []any{"", "", "", nil, nil, nil, nil, nil, nil, ""}
++	inner[6] = []any{0}
++	inner[7] = 1
++	inner[10] = 1
++	inner[11] = 0
++	inner[17] = []any{[]any{0}}
++	inner[18] = 0
++	inner[27] = 1
++	inner[30] = []any{4}
++	inner[41] = []any{1}
++	inner[45] = 1
++	inner[53] = 0
++	inner[59] = uuid.NewString()
++	inner[61] = []any{}
++	inner[68] = 1
++	inner[79] = 8
++	inner[80] = 1
++	inner[91] = 0
++	inner[96] = 0
++	ib, _ := json.Marshal(inner)
++	outer, _ := json.Marshal([]any{nil, string(ib)})
++	form = url.Values{"f.req": {string(outer)}, "at": {string(tok[1])}}
++	headers = buildGeminiHeaders(cookie, extractSAPISID(cookie), "95a4c0abcba24364")
++	headers["x-goog-ext-525001261-jspb"] = buildModelHeader("95a4c0abcba24364", 8, 1, uuid.NewString())
++	headers["x-goog-ext-525005358-jspb"] = fmt.Sprintf(`["%s",1]`, inner[59])
++	endpoint = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?hl=en&rt=c&bl=" + url.QueryEscape(string(bl[1]))
++	start := time.Now()
++	status, raw, _, _, err := doGeminiRequest(endpoint, form.Encode(), headers, "", nil)
++	if err != nil {
++		t.Fatalf("generation transport failed (%T)", err)
++	}
++	actual := extractUpstreamModel(string(raw))
++	answer := extractResponseText(string(raw))
++	t.Logf("generation_status=%d mode=8 think=1 actual_model=%q answer=%q elapsed_ms=%d raw_bytes=%d", status, actual, answer, time.Since(start).Milliseconds(), len(raw))
++	if status != 200 || !strings.Contains(strings.ToLower(actual), "argon") || strings.TrimSpace(answer) != "ARGON_OK" {
++		t.Fatal("Argon generation not verified")
++	}
 +}
 diff --git a/internal/app/argon_test.go b/internal/app/argon_test.go
 new file mode 100644
-index 0000000..afa692f
+index 0000000..70f0e10
 --- /dev/null
 +++ b/internal/app/argon_test.go
-@@ -0,0 +1,711 @@
+@@ -0,0 +1,936 @@
 +package app
 +
 +import (
 +	"bytes"
++	"context"
 +	"encoding/json"
 +	"errors"
 +	"fmt"
 +	"io"
 +	"net/http"
 +	"net/http/httptest"
++	"net/url"
 +	"strings"
++	"sync/atomic"
 +	"testing"
 +	"time"
 +)
@@ -926,18 +970,6 @@ index 0000000..afa692f
 +			t.Errorf("%s inner[79]=%v inner[80]=%v want 8/%d", name, inner[79], inner[80], mc.thinkWire())
 +		}
 +	}
-+
-+	// 媒体工具槽位覆盖顺序保持 PR #71 原序：mc.Tool>0 在补齐块之后执行，
-+	// Tool 值压过 mode-8 的 inner[49]=40（当前没有 Tool 与 Mode=8 同时存在的型号，防回归）。
-+	toolMC := ModelConfig{Mode: 8, Tool: toolImage}
-+	toolInner := make([]any, innerSlots)
-+	argonMode8Slots(toolInner)
-+	if toolMC.Tool > 0 {
-+		toolInner[49] = toolMC.Tool
-+	}
-+	if toolInner[49] != toolImage {
-+		t.Errorf("Tool 覆盖后 inner[49]=%v want %d", toolInner[49], toolImage)
-+	}
 +}
 +
 +// 4 Hydrogen：3.8 Flash 槽位（hexFlash38 / Mode=1）2026-11 原位升级。三档表项、登录门控、
@@ -1023,12 +1055,15 @@ index 0000000..afa692f
 +		rtVal.TemporaryChat, rtVal.AutoDeleteConversation, rtVal.MultiTurn = temp, autodel, multi
 +		rtMu.Unlock()
 +	}
++	credsOf := func(cookie, xsrf string) func() (string, string, string, int) {
++		return func() (string, string, string, int) { return cookie, "sa", xsrf, 0 }
++	}
 +	setRT(true, false, true) // temporary+multi → multi 优先，关
-+	if p := phantomCleanupFunc("ck", "sa", "xs", "", 0); p.enabled {
++	if p := phantomCleanupFunc(credsOf("ck", "xs"), ""); p.enabled {
 +		t.Fatal("multi_turn on should disable phantom cleanup")
 +	}
 +	setRT(true, false, false) // temporary only → 开
-+	p := phantomCleanupFunc("ck", "sa", "xs", "", 0)
++	p := phantomCleanupFunc(credsOf("ck", "xs"), "")
 +	if !p.enabled {
 +		t.Fatal("temporary_chat should enable phantom cleanup")
 +	}
@@ -1043,89 +1078,377 @@ index 0000000..afa692f
 +	}
 +	// xsrf 缺失 → no-op（删不了，不浪费 RPC）。
 +	setRT(false, true, false)
-+	if p2 := phantomCleanupFunc("ck", "sa", "", "", 0); p2.enabled {
++	if p2 := phantomCleanupFunc(credsOf("ck", ""), ""); p2.enabled {
 +		t.Fatal("missing xsrf should disable")
 +	}
++
++	// 真实 HTTP 回归（must-fix）：上游已写出带 c_xxx 的首帧，客户端随后取消。
++	// doGeminiRequestStop 在 err != nil 时必须仍带回已读到的 raw，否则首帧里的
++	// c_xxx 被丢、幽灵会话漏删。这里走代理分支（stdlib，httptest 服务器当上游）。
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.WriteHeader(200)
++		io.WriteString(w, frame+"\n")
++		w.(http.Flusher).Flush()
++		select {
++		case <-r.Context().Done():
++		case <-time.After(5 * time.Second):
++		}
++	}))
++	defer srv.Close()
++
++	ctx, cancel := context.WithCancel(context.Background())
++	time.AfterFunc(100*time.Millisecond, cancel)
++	status, raw, _, _, err := doGeminiRequestStop(ctx, "http://upstream.invalid/StreamGenerate",
++		"f.req=x", map[string]string{}, srv.URL, func(string) error { return nil }, nil)
++	if err == nil {
++		t.Fatal("客户端取消应报错")
++	}
++	if status != 200 {
++		t.Fatalf("首帧已响应，status=%d want 200", status)
++	}
++	// 回归断言：错误路径不能把已读到的 raw 丢成 nil。
++	if got := extractConversationID(string(raw)); got != "c_deadbeef1234abcd" {
++		t.Fatalf("错误路径丢了已读 raw：raw=%q cid=%q", truncate(string(raw), 120), got)
++	}
++
++	// feed + flush 走通到底：打桩 deleteConversationFn 确认 GzXR5e 会发出。
++	setRT(true, false, false)
++	deleted := make(chan string, 1)
++	prevDel := deleteConversationFn
++	deleteConversationFn = func(cid, cookie, sapisid, xsrf, proxy string, authuser int) {
++		deleted <- cid
++	}
++	defer func() { deleteConversationFn = prevDel }()
++	pc := phantomCleanupFunc(credsOf("ck", "xs"), "")
++	pc.feed(string(raw))
++	pc.flush()
++	select {
++	case cid := <-deleted:
++		if cid != "c_deadbeef1234abcd" {
++			t.Fatalf("GzXR5e 删的 cid=%q want c_deadbeef1234abcd", cid)
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatal("flush 没有发出 GzXR5e 删除请求")
++	}
 +}
++
++// must-fix 回归：400+XSRF 自愈换 token 之后，phantomCleanup 收尾必须带新 token ——
++// 旧版拿的是创建时快照的旧 token，自愈后取消/超时会让 GzXR5e 带着已被拒的旧 token
++// 去删，幽灵照样残留。成功路径不再直调 deleteConversation：同一 cid 由
++// defer phantomCleanup.flush() 删一次。
++//
++// 「恰好一次」计数必须下沉到假传输层：只数 deleteConversationFn 桩点的话，
++// 成功分支若被改回直调 go deleteConversation(...)（不经过桩点），请求照样发出、
++// 测试却假绿。所以在 RoundTripper 里按 rpcids=GzXR5e 拦截真实出站请求计数，
++// 并校验它带的 XSRF（at=）与 Authorization（SAPISIDHASH 认证）—— 后者能直接
++// 检出 cleanup 凭据闭包里 sapisid 被遮蔽成零值的 bug。桩点只作旁证保留。
++//
++// 出口侧不打真网络：streamGenerateOnce 走代理分支（stdlib 客户端），测试把该
++// proxyURL 的 stdlibClientCache 换成走假 RoundTripper 的客户端，handler 按 URL
++// 分派 —— /app 取 XSRF、StreamGenerate 先 400 再 200、/gg-dl 出 PNG。
++func TestXSRFSelfHealPhantomCleanupAndSingleDelete(t *testing.T) {
++	cid := "c_f00dd00df00dd00d"
++	// 首帧只带 cid（幽灵帧）、次帧带图片 CDN 链让 collectImageURLs 命中，末帧出正文。
++	frame := fmt.Sprintf(`[["wrb.fr","A","[null,[\"%s\"],null,4]",null,"generic"]]`, cid)
++	imgLine := `[["wrb.fr","B","[null,null,null,[null,null,null,\"https://lh3.googleusercontent.com/gg-dl/abc\"]]",null,"generic"]]`
++
++	// 正文帧：textsInLine 取 inner[4][i][1][j] 的字符串，构造同形状的候选回复块。
++	// inner[1] 放 [cid, rid] 供 convIDInLine / parseConvIDs 提取（同 frame 行的 [1][0]）。
++	contentFields := make([]any, 43)
++	contentFields[1] = []any{cid, "r_1"}
++	// 答案给长一点：textsInLine 对 <200 字节的行直接返回 nil，padding 凑够长度。
++	contentFields[4] = []any{[]any{"rc_x", []any{"ok - a deliberately long answer body to pad the wrb.fr line beyond the 200-byte textsInLine minimum length gate"}}}
++	cpayload, _ := json.Marshal(contentFields)
++	crow, _ := json.Marshal([]any{[]any{"wrb.fr", "rpc1", string(cpayload), nil}})
++	contentLine := string(crow)
++
++	// 传输层证据：GzXR5e（删会话）出站请求的认证信息与 cid，桩点之外的第二见证。
++	type delReq struct {
++		at   string // form at=，flush 用的 XSRF
++		auth string // Authorization 头，sapisid 为空时 buildGeminiHeaders 不会写它
++		cid  string
++	}
++	delReqs := make(chan delReq, 4)
++
++	var first atomic.Bool
++	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
++		var body []byte
++		if req.Body != nil {
++			body, _ = io.ReadAll(req.Body)
++			_ = req.Body.Close()
++		}
++		resp := func(status int, body string) *http.Response {
++			return &http.Response{
++				StatusCode: status, Status: fmt.Sprintf("%d", status),
++				Header:  http.Header{},
++				Body:    io.NopCloser(strings.NewReader(body)),
++				Request: req,
++			}
++		}
++		if req.URL.Query().Get("rpcids") == "GzXR5e" || strings.Contains(string(body), `"GzXR5e"`) {
++			d := delReq{auth: req.Header.Get("Authorization")}
++			if vals, err := url.ParseQuery(string(body)); err == nil {
++				d.at = vals.Get("at")
++				// f.req 形状：[[["GzXR5e","[\"c_xxx\"]",null,"generic"]]]，防御式逐层取。
++				var outer [][][]any
++				if json.Unmarshal([]byte(vals.Get("f.req")), &outer) == nil &&
++					len(outer) > 0 && len(outer[0]) > 0 && len(outer[0][0]) > 1 {
++					var inner []string
++					if s, _ := outer[0][0][1].(string); json.Unmarshal([]byte(s), &inner) == nil && len(inner) > 0 {
++						d.cid = inner[0]
++					}
++				}
++			}
++			delReqs <- d
++			return resp(200, `")']'\n[[\"wrb.fr\",\"GzXR5e\",null]]"`), nil
++		}
++		switch req.URL.Path {
++		case "/app":
++			// SNlM0e 形状是 <token>:<毫秒时间戳>，正则要求整段 ≥10 字符。
++			return resp(200, `"SNlM0e":"tok-new-xyz:1700000000000","cfb2h":"boq_x_20260101.01_p1","qKIAYe":"pid","Ylro7b":"pctx"`), nil
++		case "/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate":
++			if !first.Swap(true) {
++				return resp(400, `[["er",null,400,null,null,[["48448350",["xsrf","tok-new"]]]]]`), nil
++			}
++			return resp(200, ")]}'\n"+frame+"\n"+imgLine+"\n"+contentLine+"\n"), nil
++		case "/gg-dl/abc=s0":
++			r := resp(200, "PNGDATA")
++			r.Header.Set("Content-Type", "image/png")
++			return r, nil
++		}
++		t.Logf("未命中: %s %s body=%.200s", req.Method, req.URL.String(), body)
++		return resp(404, ""), nil
++	})
++	const fakeProxy = "http://fake-exit.invalid:3128"
++	stdlibClientCache.Store(fakeProxy+"|0", &http.Client{Transport: rt})
++	stdlibClientCache.Store(fakeProxy+"|"+fmt.Sprint(rtCfg().RequestTimeout), &http.Client{Transport: rt})
++	defer func() {
++		stdlibClientCache.Delete(fakeProxy + "|0")
++		stdlibClientCache.Delete(fakeProxy + "|" + fmt.Sprint(rtCfg().RequestTimeout))
++	}()
++
++	// 把池子里塞一条测试号，绑定走我们的"代理"。
++	withPoolCookie(t)
++	acct, ok := pickCookieAccount()
++	if !ok {
++		t.Fatal("池里没有号")
++	}
++	proxyMu.Lock()
++	oldProxies := proxyCache
++	proxyCache = []Proxy{{ID: 999, Name: "test", URL: fakeProxy, Enabled: true}}
++	proxyMu.Unlock()
++	defer func() { proxyMu.Lock(); proxyCache = oldProxies; proxyMu.Unlock() }()
++
++	// token 桩：getXSRF 走缓存路径返回，不发真 HTTP。tok-old 是被上游拒的那个。
++	cookie := acct.Cookie
++	invalidateXSRF(cookie)
++	xsrfMu.Lock()
++	xsrfCache[xsrfKey(cookie, acct.AuthUser)] = xsrfEntry{token: "tok-old", fetched: time.Now()}
++	xsrfMu.Unlock()
++
++	// rtVal：测试进程里 initRuntimeConfig 没跑过，rtVal 是零值（RetryAttempts=0 会
++	// 让整个重试循环一次都不跑直接空返回）。按默认值补重试预算，再开本用例要的开关。
++	saveRt := rtVal
++	defer func() { rtMu.Lock(); rtVal = saveRt; rtMu.Unlock() }()
++	rtMu.Lock()
++	rtVal.RetryAttempts, rtVal.RetryDelaySec = 3, 1
++	rtVal.TemporaryChat, rtVal.AutoDeleteConversation, rtVal.MultiTurn = true, false, false
++	rtMu.Unlock()
++
++	// 打桩只作旁证（防绕过计数主要靠上面的传输层 delReqs）：透传调用真实
++	// deleteConversation，让 GzXR5e 真打到假 RoundTripper 被计数；若有人把删除
++	// 改成绕开 deleteConversationFn 的写法，桩点静默而传输层仍会计数。
++	deleted := make(chan string, 4)
++	prevDel := deleteConversationFn
++	deleteConversationFn = func(cid, cookie, sapisid, xsrf, proxy string, authuser int) {
++		deleted <- xsrf + "|" + cid
++		prevDel(cid, cookie, sapisid, xsrf, proxy, authuser)
++	}
++	defer func() { deleteConversationFn = prevDel }()
++
++	// 媒体工具（toolImage）走 fetchMediaArtifacts 的 /gg-dl 分支，把 PNG 捞回来。
++	mc := ModelConfig{HexID: hexFlash36, Mode: 1, Tool: toolImage}
++	res, err := streamGenerateOnce(context.Background(), "draw", promptCtx{Latest: "draw"}, mc, nil, nil, nil, nil, map[int64]bool{})
++	if err != nil {
++		t.Fatalf("streamGenerateOnce err=%v res=%+v", err, res)
++	}
++	if res == nil || len(res.Artifacts) == 0 {
++		t.Fatalf("没取回产物: artifacts=%d mediaErr=%v raw=%.400s", len(res.Artifacts), res.MediaErr, res.Raw)
++	}
++
++	// 传输层证据是主判据：同一 cid 的 GzXR5e 出站请求恰好一次，且带自愈后的
++	// 新 XSRF 与非空认证（sapisid 被遮蔽成零值时这里没有 Authorization）。
++	select {
++	case d := <-delReqs:
++		if d.cid != cid {
++			t.Fatalf("删的 cid=%q want %s", d.cid, cid)
++		}
++		if d.at != "tok-new-xyz:1700000000000" {
++			t.Fatalf("用的 XSRF=%q want tok-new-xyz:1700000000000（旧 token 已被拒，flush 必须用新的）", d.at)
++		}
++		if !strings.HasPrefix(d.auth, "SAPISIDHASH ") {
++			t.Fatalf("删除请求缺 Authorization（sapisid 没传下去？）: auth=%q", d.auth)
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatal("flush 没有发出 GzXR5e 删除请求")
++	}
++	select {
++	case extra := <-delReqs:
++		t.Fatalf("同一 cid 的 GzXR5e 发了第二次: %+v", extra)
++	case <-time.After(300 * time.Millisecond):
++	}
++
++	// 桩点旁证：现有实现下也应被命中一次、带新 token。
++	select {
++	case got := <-deleted:
++		parts := strings.SplitN(got, "|", 2)
++		if parts[1] != cid || parts[0] != "tok-new-xyz:1700000000000" {
++			t.Fatalf("桩点记的删除=%q want %s|%s", got, "tok-new-xyz:1700000000000", cid)
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatal("deleteConversationFn 桩点未命中（传输层已见请求，路径变了？）")
++	}
++}
++
++type roundTripperFunc func(*http.Request) (*http.Response, error)
++
++func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 diff --git a/internal/app/argon_timing_probe_test.go b/internal/app/argon_timing_probe_test.go
 new file mode 100644
-index 0000000..fb1ccec
+index 0000000..558236a
 --- /dev/null
 +++ b/internal/app/argon_timing_probe_test.go
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,131 @@
 +package app
 +
 +import (
-+ "encoding/json"
-+ "fmt"
-+ "net/url"
-+ "os"
-+ "regexp"
-+ "strings"
-+ "testing"
-+ "time"
-+ "github.com/google/uuid"
-+ fhttp "github.com/bogdanfinn/fhttp"
++	"encoding/json"
++	"fmt"
++	fhttp "github.com/bogdanfinn/fhttp"
++	"github.com/google/uuid"
++	"net/url"
++	"os"
++	"regexp"
++	"strings"
++	"testing"
++	"time"
 +)
 +
 +// Explicitly opted-in local protocol probe. Does not log cookies, tokens, or raw account responses.
 +func TestArgonTimingProbe(t *testing.T) {
-+ cookie := os.Getenv("ARGON_PROBE_COOKIE")
-+ if cookie == "" { t.Skip("local authenticated probe not enabled") }
-+ dbPath := cfg.DBPath
-+ cfg = defaultConfig(); cfg.DBPath = dbPath; cfg.RequestTimeout = 65
-+ initRuntimeConfig()
-+ page, err := fetchAppPage(cookie, 0, ""); if err != nil { t.Fatal("page fetch failed") }
-+ tok := snlm0eRe.FindSubmatch(page); if len(tok)<2 {t.Fatal("login token unavailable")}
-+ bl := regexp.MustCompile(`"cfb2h":"([^"]+)"`).FindSubmatch(page)
-+ if len(bl)<2 {t.Fatal("build version unavailable")}
-+ headers := buildGeminiHeaders(cookie,extractSAPISID(cookie), "")
-+ delete(headers,"x-goog-ext-525001261-jspb")
-+ freq,_:=json.Marshal([]any{[]any{[]any{"otAQ7b","[]",nil,"generic"}}})
-+ form:=url.Values{"f.req":{string(freq)},"at":{string(tok[1])}}
-+ endpoint:="https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=otAQ7b&hl=en&rt=c&bl="+url.QueryEscape(string(bl[1]))
-+ status,_,catalog,err:=uploadPost(endpoint,headers,[]byte(form.Encode()),"")
-+ if err!=nil {t.Fatal("catalog request failed")}
-+ t.Logf("catalog_status=%d argon_hex_present=%v argon_name_present=%v",status,strings.Contains(string(catalog),"95a4c0abcba24364"),strings.Contains(string(catalog),"Argon"))
-+ if !strings.Contains(string(catalog),"95a4c0abcba24364") {t.Fatal("Argon not confirmed in account catalog")}
-+ if os.Getenv("ARGON_PROBE_CATALOG_ONLY")=="1" { return }
-+ inner:=make([]any,97)
-+ inner[0]=[]any{"Explain how rain forms in 12 short numbered sentences. Begin directly with sentence 1.",0,nil,nil,nil,nil,0}
-+ inner[1]=[]any{"en"};inner[2]=[]any{"","","",nil,nil,nil,nil,nil,nil,""}
-+ inner[6]=[]any{0};inner[7]=1;inner[10]=1;inner[11]=0;inner[17]=[]any{[]any{0}}
-+ inner[18]=0;inner[27]=1;inner[30]=[]any{4};inner[41]=[]any{1};inner[45]=1
-+ inner[53]=0;inner[59]=uuid.NewString();inner[61]=[]any{};inner[68]=1;inner[79]=8;inner[80]=1;inner[91]=0;inner[96]=0
-+ ib,_:=json.Marshal(inner);outer,_:=json.Marshal([]any{nil,string(ib)})
-+ form=url.Values{"f.req":{string(outer)},"at":{string(tok[1])}}
-+ headers=buildGeminiHeaders(cookie,extractSAPISID(cookie),"95a4c0abcba24364")
-+ headers["x-goog-ext-525001261-jspb"]=buildModelHeader("95a4c0abcba24364",8,1,uuid.NewString())
-+ headers["x-goog-ext-525005358-jspb"]=fmt.Sprintf(`["%s",1]`,inner[59])
-+ endpoint="https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?hl=en&rt=c&bl="+url.QueryEscape(string(bl[1]))
-+ start:=time.Now()
-+ req,e:=fhttp.NewRequest("POST",endpoint,strings.NewReader(form.Encode()));if e!=nil{t.Fatal("request construction failed")}
-+ for k,v:=range headers{req.Header.Set(k,v)}
-+ resp,e:=getTLSClient().Do(req);if e!=nil{t.Fatalf("transport failed (%T)",e)}
-+ defer resp.Body.Close()
-+ status=resp.StatusCode
-+ firstIdentity,firstText,firstReasoning,lastText:=int64(-1),int64(-1),int64(-1),int64(-1)
-+ lineCount,textFrames:=0,0
-+ lastContent:=""
-+ raw,firstLine,err:=readBody(resp.Body,func(line string) error {
-+  lineCount++;ms:=time.Since(start).Milliseconds()
-+  if firstIdentity<0 && validateArgonIdentity([]byte(line), argonDisplayNames(thinkingNormal))==nil{firstIdentity=ms}
-+  if firstReasoning<0 && reasoningInLine(line)!=""{firstReasoning=ms}
-+  texts:=textsInLine(line)
-+  if len(texts)>0 && strings.Join(texts,"\n")!=lastContent {
-+   lastContent=strings.Join(texts,"\n");textFrames++;lastText=ms
-+   if firstText<0{firstText=ms}
-+  }
-+  return nil
-+ },start)
-+ t.Logf("TIMING first_line_ms=%d first_identity_ms=%d first_text_ms=%d first_reasoning_ms=%d last_text_ms=%d complete_ms=%d lines=%d text_updates=%d",firstLine,firstIdentity,firstText,firstReasoning,lastText,time.Since(start).Milliseconds(),lineCount,textFrames)
-+ if err!=nil {t.Fatalf("generation transport failed (%T)",err)}
-+ actual:=extractUpstreamModel(string(raw));answer:=extractResponseText(string(raw))
-+ t.Logf("generation_status=%d mode=8 think=1 actual_model=%q answer_bytes=%d elapsed_ms=%d raw_bytes=%d",status,actual,len(answer),time.Since(start).Milliseconds(),len(raw))
-+ if status!=200 || !strings.Contains(strings.ToLower(actual),"argon") || strings.TrimSpace(answer)=="" {t.Fatal("Argon generation not verified")}
++	cookie := os.Getenv("ARGON_PROBE_COOKIE")
++	if cookie == "" {
++		t.Skip("local authenticated probe not enabled")
++	}
++	dbPath := cfg.DBPath
++	cfg = defaultConfig()
++	cfg.DBPath = dbPath
++	cfg.RequestTimeout = 65
++	initRuntimeConfig()
++	page, err := fetchAppPage(cookie, 0, "")
++	if err != nil {
++		t.Fatal("page fetch failed")
++	}
++	tok := snlm0eRe.FindSubmatch(page)
++	if len(tok) < 2 {
++		t.Fatal("login token unavailable")
++	}
++	bl := regexp.MustCompile(`"cfb2h":"([^"]+)"`).FindSubmatch(page)
++	if len(bl) < 2 {
++		t.Fatal("build version unavailable")
++	}
++	headers := buildGeminiHeaders(cookie, extractSAPISID(cookie), "")
++	delete(headers, "x-goog-ext-525001261-jspb")
++	freq, _ := json.Marshal([]any{[]any{[]any{"otAQ7b", "[]", nil, "generic"}}})
++	form := url.Values{"f.req": {string(freq)}, "at": {string(tok[1])}}
++	endpoint := "https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=otAQ7b&hl=en&rt=c&bl=" + url.QueryEscape(string(bl[1]))
++	status, _, catalog, err := uploadPost(endpoint, headers, []byte(form.Encode()), "")
++	if err != nil {
++		t.Fatal("catalog request failed")
++	}
++	t.Logf("catalog_status=%d argon_hex_present=%v argon_name_present=%v", status, strings.Contains(string(catalog), "95a4c0abcba24364"), strings.Contains(string(catalog), "Argon"))
++	if !strings.Contains(string(catalog), "95a4c0abcba24364") {
++		t.Fatal("Argon not confirmed in account catalog")
++	}
++	if os.Getenv("ARGON_PROBE_CATALOG_ONLY") == "1" {
++		return
++	}
++	inner := make([]any, 97)
++	inner[0] = []any{"Explain how rain forms in 12 short numbered sentences. Begin directly with sentence 1.", 0, nil, nil, nil, nil, 0}
++	inner[1] = []any{"en"}
++	inner[2] = []any{"", "", "", nil, nil, nil, nil, nil, nil, ""}
++	inner[6] = []any{0}
++	inner[7] = 1
++	inner[10] = 1
++	inner[11] = 0
++	inner[17] = []any{[]any{0}}
++	inner[18] = 0
++	inner[27] = 1
++	inner[30] = []any{4}
++	inner[41] = []any{1}
++	inner[45] = 1
++	inner[53] = 0
++	inner[59] = uuid.NewString()
++	inner[61] = []any{}
++	inner[68] = 1
++	inner[79] = 8
++	inner[80] = 1
++	inner[91] = 0
++	inner[96] = 0
++	ib, _ := json.Marshal(inner)
++	outer, _ := json.Marshal([]any{nil, string(ib)})
++	form = url.Values{"f.req": {string(outer)}, "at": {string(tok[1])}}
++	headers = buildGeminiHeaders(cookie, extractSAPISID(cookie), "95a4c0abcba24364")
++	headers["x-goog-ext-525001261-jspb"] = buildModelHeader("95a4c0abcba24364", 8, 1, uuid.NewString())
++	headers["x-goog-ext-525005358-jspb"] = fmt.Sprintf(`["%s",1]`, inner[59])
++	endpoint = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?hl=en&rt=c&bl=" + url.QueryEscape(string(bl[1]))
++	start := time.Now()
++	req, e := fhttp.NewRequest("POST", endpoint, strings.NewReader(form.Encode()))
++	if e != nil {
++		t.Fatal("request construction failed")
++	}
++	for k, v := range headers {
++		req.Header.Set(k, v)
++	}
++	resp, e := getTLSClient().Do(req)
++	if e != nil {
++		t.Fatalf("transport failed (%T)", e)
++	}
++	defer resp.Body.Close()
++	status = resp.StatusCode
++	firstIdentity, firstText, firstReasoning, lastText := int64(-1), int64(-1), int64(-1), int64(-1)
++	lineCount, textFrames := 0, 0
++	lastContent := ""
++	raw, firstLine, err := readBody(resp.Body, func(line string) error {
++		lineCount++
++		ms := time.Since(start).Milliseconds()
++		if firstIdentity < 0 && validateArgonIdentity([]byte(line), argonDisplayNames(thinkingNormal)) == nil {
++			firstIdentity = ms
++		}
++		if firstReasoning < 0 && reasoningInLine(line) != "" {
++			firstReasoning = ms
++		}
++		texts := textsInLine(line)
++		if len(texts) > 0 && strings.Join(texts, "\n") != lastContent {
++			lastContent = strings.Join(texts, "\n")
++			textFrames++
++			lastText = ms
++			if firstText < 0 {
++				firstText = ms
++			}
++		}
++		return nil
++	}, start)
++	t.Logf("TIMING first_line_ms=%d first_identity_ms=%d first_text_ms=%d first_reasoning_ms=%d last_text_ms=%d complete_ms=%d lines=%d text_updates=%d", firstLine, firstIdentity, firstText, firstReasoning, lastText, time.Since(start).Milliseconds(), lineCount, textFrames)
++	if err != nil {
++		t.Fatalf("generation transport failed (%T)", err)
++	}
++	actual := extractUpstreamModel(string(raw))
++	answer := extractResponseText(string(raw))
++	t.Logf("generation_status=%d mode=8 think=1 actual_model=%q answer_bytes=%d elapsed_ms=%d raw_bytes=%d", status, actual, len(answer), time.Since(start).Milliseconds(), len(raw))
++	if status != 200 || !strings.Contains(strings.ToLower(actual), "argon") || strings.TrimSpace(answer) == "" {
++		t.Fatal("Argon generation not verified")
++	}
 +}
 diff --git a/internal/app/cancel_test.go b/internal/app/cancel_test.go
 new file mode 100644
@@ -1813,7 +2136,7 @@ index 60fe35f..14e5a44 100644
  	if extractSAPISID(a.Cookie) == "" {
  		detail += "，但缺 SAPISID（算不出授权头，部分接口会被当匿名）"
 diff --git a/internal/app/gemini.go b/internal/app/gemini.go
-index 242e6bb..f53eebb 100644
+index 242e6bb..e0249c8 100644
 --- a/internal/app/gemini.go
 +++ b/internal/app/gemini.go
 @@ -14,6 +14,7 @@ import (
@@ -1994,7 +2317,7 @@ index 242e6bb..f53eebb 100644
  	// 媒体工具开关。填了服务端就换后端模型出图/出乐（响应里带产物引用，字节要另取）。
  	if mc.Tool > 0 {
  		inner[49] = mc.Tool
-@@ -728,49 +781,48 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -728,49 +781,51 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	xsrfRetried := false // XSRF 自愈只做一次，避免死循环
  	t0 := time.Now()
  
@@ -2067,7 +2390,10 @@ index 242e6bb..f53eebb 100644
 +	// 收集到的任一 raw 帧里提取出 c_xxx，就异步 GzXR5e 删掉。成功帧、取消帧、错误帧都管。
 +	// 无害性：正常会话不会被误删 —— 该条件本身就意味着「这条会话不该留在账号里」，删掉它
 +	// 正是本意；multi_turn 开着时这个函数整体不生效（会话要留给续接）。
-+	phantomCleanup := phantomCleanupFunc(cookieStr, sapisid, xsrfToken, proxyURL, authUser)
++	// XSRF 值在 retry 循环里可能被自愈换掉，用闭包读取保证收尾用的总是当前最新的。
++	phantomCleanup := phantomCleanupFunc(func() (string, string, string, int) {
++		return cookieStr, sapisid, xsrfToken, authUser
++	}, proxyURL)
 +	defer phantomCleanup.flush()
 +
  	for attempt := 0; attempt < rtCfg().RetryAttempts; attempt++ {
@@ -2077,7 +2403,7 @@ index 242e6bb..f53eebb 100644
  		var statusCode int
  		var raw []byte
  		var ttfb int64
-@@ -778,9 +830,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -778,9 +833,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  		var err error
  		if useWC {
  			wcReq.Cookie = cookieStr
@@ -2089,7 +2415,7 @@ index 242e6bb..f53eebb 100644
  		}
  		if len(setCookie) > 0 && cookieID > 0 {
  			if merged := mergeSetCookie(cookieStr, setCookie); merged != cookieStr {
-@@ -788,6 +840,15 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -788,6 +843,15 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  				updateAccountCookie(cookieID, merged)
  			}
  		}
@@ -2105,7 +2431,7 @@ index 242e6bb..f53eebb 100644
  		// 降级不是出口或 cookie 的错，也不该重试：同一个号再发一次还是降级。
  		var mde *ModelDowngradedError
  		if errors.As(err, &mde) {
-@@ -799,6 +860,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -799,6 +863,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			return res, err
  		}
  		if err != nil {
@@ -2115,7 +2441,7 @@ index 242e6bb..f53eebb 100644
  			lastErr = err
  			// 出错话术不记进代理健康度：匿名直连也一样出，跟出口无关，算进去会误熔断。
  			if pickedOK && !errors.Is(err, errUpstreamFailureReply) {
-@@ -814,7 +878,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -814,7 +881,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, err)
@@ -2126,7 +2452,15 @@ index 242e6bb..f53eebb 100644
  			}
  			continue
  		}
-@@ -843,7 +909,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -825,6 +894,7 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+ 				xsrfRetried = true
+ 				invalidateXSRF(cookieStr)
+ 				if tok, e := getXSRF(cookieStr, authUser, proxyURL); e == nil {
++					xsrfToken = tok // 同步给收尾：phantomCleanup 按闭包取当前值
+ 					body = buildBody(tok)
+ 					geminiHeaders = buildGeminiHeaders(cookieStr, sapisid, mc.HexID)
+ 					setAuthUserHeaders(geminiHeaders, authUser)
+@@ -843,7 +913,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  				break
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
@@ -2137,7 +2471,7 @@ index 242e6bb..f53eebb 100644
  			}
  			continue
  		}
-@@ -871,7 +939,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -871,7 +943,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: 空响应（无内容帧，%d 字节）", attempt+1, rtCfg().RetryAttempts, len(raw))
@@ -2148,7 +2482,7 @@ index 242e6bb..f53eebb 100644
  			}
  			continue
  		}
-@@ -883,7 +953,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+@@ -883,7 +957,9 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  			}
  			if attempt < rtCfg().RetryAttempts-1 {
  				logf("retry %d/%d: %v", attempt+1, rtCfg().RetryAttempts, lastErr)
@@ -2159,22 +2493,30 @@ index 242e6bb..f53eebb 100644
  			}
  			continue
  		}
-@@ -934,9 +1006,11 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
- 		// #19 自动删会话：出完结果把 gemini.google.com 上留下的这条会话删掉，避免
- 		// 用户账号里堆一堆。只登录态能删（要 XSRF），异步 best-effort，不影响响应。
- 		//
+@@ -931,16 +1007,12 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+ 				logf("[media] 取回 %d 份产物", len(arts))
+ 			}
+ 		}
+-		// #19 自动删会话：出完结果把 gemini.google.com 上留下的这条会话删掉，避免
+-		// 用户账号里堆一堆。只登录态能删（要 XSRF），异步 best-effort，不影响响应。
+-		//
 -		// 临时对话（#34）生效时跳过：那条压根没进会话列表，删它是多发一次 RPC 删空气。
 -		// 这正是临时对话比 create-then-delete 省的那一次出站请求。
 -		if rtCfg().AutoDeleteConversation && !temporaryChatEligible() && cookieStr != "" && xsrfToken != "" {
-+		// 兜底由 phantomCleanup 统一管（含 temporary_chat 下服务端仍建档的幽灵、以及
-+		// 客户端取消/超时时已落库的那条）；这里保留原触发点只是让它在 200 成功时
-+		// 立即删、不等 defer。条件放宽为 (AutoDeleteConversation||temporaryChatEligible)
-+		// —— 后者开着时幽灵照样产生，旧版「temporary 就不用删」的前提被实测推翻。
-+		if (rtCfg().AutoDeleteConversation || temporaryChatEligible()) && cookieStr != "" && xsrfToken != "" {
- 			if cid := extractConversationID(string(raw)); cid != "" {
- 				go deleteConversation(cid, cookieStr, sapisid, xsrfToken, proxyURL, authUser)
- 			}
-@@ -949,6 +1023,82 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
+-			if cid := extractConversationID(string(raw)); cid != "" {
+-				go deleteConversation(cid, cookieStr, sapisid, xsrfToken, proxyURL, authUser)
+-			}
+-		}
++		// #19 自动删会话 / #phantom 幽灵清理：媒体路径的 cid 已在 raw 到达时由
++		// phantomCleanup.feed 收集；删会话统一由 defer phantomCleanup.flush() 收尾
++		// （含 temporary_chat 下服务端仍建档的幽灵、以及客户端取消/超时时已落库的那条）。
++		// 不再在这里直调 deleteConversation：同一 cid 会被 defer 删第二次，多发一次
++		// GzXR5e RPC。条件放宽为 (AutoDeleteConversation||temporaryChatEligible) ——
++		// 后者开着时幽灵照样产生，旧版「temporary 就不用删」的前提被实测推翻。
+ 		return result, nil
+ 	}
+ 	if lastErr != nil {
+@@ -949,6 +1021,82 @@ func streamGenerateOnce(prompt, latest string, mc ModelConfig, pending []pending
  	return attrib(lastErr)
  }
  
@@ -2257,7 +2599,7 @@ index 242e6bb..f53eebb 100644
  // upstreamModelRe 匹配响应帧里服务端自报的模型显示名（帧的 [42] 位）。
  // 形如 ...,"fbb127bbb056c959",null,null,"3.6 Flash",true,...
  var upstreamModelRe = regexp.MustCompile(`\\"[0-9a-f]{16}\\",null,null,\\"([^"\\]{1,40})\\"`)
-@@ -1029,10 +1179,125 @@ func setAuthUserHeaders(h map[string]string, authuser int) {
+@@ -1029,10 +1177,125 @@ func setAuthUserHeaders(h map[string]string, authuser int) {
  // 实测号活一两小时就失效 —— 所以这些必须收下来并写回账号。
  func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL string,
  	onLine func(string) error) (int, []byte, int64, []string, error) {
@@ -2384,7 +2726,7 @@ index 242e6bb..f53eebb 100644
  		if err != nil {
  			return 0, nil, 0, nil, err
  		}
-@@ -1040,36 +1305,37 @@ func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL
+@@ -1040,36 +1303,40 @@ func doGeminiRequest(endpoint, body string, headers map[string]string, proxyURL
  		for k, v := range headers {
  			req.Header.Set(k, v)
  		}
@@ -2400,7 +2742,9 @@ index 242e6bb..f53eebb 100644
 +		raw, ttfb, err := readModelCheckedBody(stopReader{heardReader{resp.Body, watch}, stop}, onLine, sendAt, resp.StatusCode, headers["x-goog-ext-525001261-jspb"])
  		if err != nil {
 -			return resp.StatusCode, nil, ttfb, resp.Header.Values("Set-Cookie"), err
-+			return resp.StatusCode, nil, ttfb, resp.Header.Values("Set-Cookie"), watch.explain(err)
++			// raw 要原样回传：取消/超时/身份不符时已到达的首帧里可能带着 c_xxx，
++			// 上层 phantomCleanup 要靠它删幽灵会话，置 nil 这条残片就漏网了。
++			return resp.StatusCode, raw, ttfb, resp.Header.Values("Set-Cookie"), watch.explain(err)
  		}
  		return resp.StatusCode, raw, ttfb, resp.Header.Values("Set-Cookie"), nil
  	}
@@ -2427,11 +2771,12 @@ index 242e6bb..f53eebb 100644
 +	raw, ttfb, err := readModelCheckedBody(stopReader{heardReader{resp.Body, watch}, stop}, onLine, sendAt, resp.StatusCode, headers["x-goog-ext-525001261-jspb"])
  	if err != nil {
 -		return resp.StatusCode, nil, ttfb, resp.Header.Values("Set-Cookie"), err
-+		return resp.StatusCode, nil, ttfb, resp.Header.Values("Set-Cookie"), watch.explain(err)
++		// 同代理分支：raw 里已到的 c_xxx 要留给 phantomCleanup。
++		return resp.StatusCode, raw, ttfb, resp.Header.Values("Set-Cookie"), watch.explain(err)
  	}
  	return resp.StatusCode, raw, ttfb, resp.Header.Values("Set-Cookie"), nil
  }
-@@ -1451,6 +1717,7 @@ func probeGemini(prompt, proxyURL string) ProbeResult {
+@@ -1451,6 +1718,7 @@ func probeGemini(prompt, proxyURL string) ProbeResult {
  			res.Diagnostic = "构建请求失败: " + e.Error()
  			return res
  		}
@@ -2609,7 +2954,7 @@ index 0000000..ef9b476
 +}
 diff --git a/internal/app/latency_test.go b/internal/app/latency_test.go
 new file mode 100644
-index 0000000..fb778f5
+index 0000000..abe0a17
 --- /dev/null
 +++ b/internal/app/latency_test.go
 @@ -0,0 +1,333 @@
@@ -2738,9 +3083,9 @@ index 0000000..fb778f5
 +		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}\n``", false}, // 闭合到一半
 +		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}\n```", true},
 +		{"好的\n```tool_call {\"name\":\"bash\",\"arguments\":{}}```", true},
-+		{"```tool_call\n{\"name\": \"rm_rf\", \"arguments\": {}}\n```", false},                         // 不认识的函数
-+		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"echo ```\"}}\n```", true},  // 参数里有围栏，外层已闭合
-+		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"echo ```\"}}", false},      // 参数里有围栏，外层未闭合
++		{"```tool_call\n{\"name\": \"rm_rf\", \"arguments\": {}}\n```", false},                        // 不认识的函数
++		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"echo ```\"}}\n```", true}, // 参数里有围栏，外层已闭合
++		{"```tool_call\n{\"name\": \"bash\", \"arguments\": {\"command\": \"echo ```\"}}", false},     // 参数里有围栏，外层未闭合
 +	}
 +	for _, c := range cases {
 +		if got := done(c.text); got != c.want {
@@ -2932,8 +3277,8 @@ index 0000000..fb778f5
 +	t.Cleanup(func() { webChannelIgnoredLogged.Store(false) })
 +
 +	got := []bool{
-+		noteWebChannelIgnored(true),  // 第一次看到开着：提示
-+		noteWebChannelIgnored(true),  // 后续请求：不再提示
++		noteWebChannelIgnored(true), // 第一次看到开着：提示
++		noteWebChannelIgnored(true), // 后续请求：不再提示
 +		noteWebChannelIgnored(true),
 +		noteWebChannelIgnored(false), // 关掉：清零
 +		noteWebChannelIgnored(true),  // 再打开：再提示一次
@@ -3027,7 +3372,7 @@ index acb1131..a8bab02 100644
  		return nil, err
  	}
 diff --git a/internal/app/media.go b/internal/app/media.go
-index ec3b6e4..683818a 100644
+index ec3b6e4..40158e9 100644
 --- a/internal/app/media.go
 +++ b/internal/app/media.go
 @@ -762,6 +762,7 @@ func mediaGetOnce(rawURL string, headers map[string]string, proxyURL string) (in
@@ -3038,7 +3383,7 @@ index ec3b6e4..683818a 100644
  	for k, v := range headers {
  		req.Header.Set(k, v)
  	}
-@@ -794,38 +795,113 @@ func flattenFHeaders(h fhttp.Header) map[string]string {
+@@ -794,38 +795,118 @@ func flattenFHeaders(h fhttp.Header) map[string]string {
  // 取回音乐/视频产物要用它去 hNvQHb 拿这次生成的历史。
  func extractConversationID(raw string) string {
  	for _, line := range strings.Split(raw, "\n") {
@@ -3126,20 +3471,21 @@ index ec3b6e4..683818a 100644
 +// 线程安全：feed 只在请求 goroutine 里调，flush 由 defer 在返回前调一次，删是 go 出去
 +// 的 best-effort。同一 cid 只删一次（map 去重）。
 +type phantomCleanup struct {
-+	enabled  bool
-+	cids     map[string]bool
-+	cookie   string
-+	sapisid  string
-+	xsrf     string
-+	proxy    string
-+	authuser int
++	enabled bool
++	cids    map[string]bool
++	proxy   string
++	// creds 每次删除前按最新值取：400/XSRF 自愈拿到新 token 后会更新 xsrfToken，
++	// 用闭包取到的总是当前值，不会拿到上游已拒的旧 token。
++	creds func() (cookie, sapisid, xsrf string, authuser int)
 +}
 +
 +// phantomCleanupFunc 构造收尾器。条件：(TemporaryChat||AutoDeleteConversation) &&
 +// !MultiTurn && cookie!="" —— 这就是「这条会话本来就不该留在账号里」的充要条件。
 +// multi_turn 开着时整个返回 no-op（会话要留给续接）。xsrf 拿不到时也退化成 no-op。
-+func phantomCleanupFunc(cookie, sapisid, xsrf, proxyURL string, authuser int) *phantomCleanup {
-+	p := &phantomCleanup{cookie: cookie, sapisid: sapisid, xsrf: xsrf, proxy: proxyURL, authuser: authuser}
++// creds 由调用方闭包提供，flush 时按需取最新 cookie/XSRF（XSRF 可能被自愈换掉）。
++func phantomCleanupFunc(creds func() (cookie, sapisid, xsrf string, authuser int), proxyURL string) *phantomCleanup {
++	cookie, _, xsrf, _ := creds()
++	p := &phantomCleanup{proxy: proxyURL, creds: creds}
 +	p.enabled = (rtCfg().TemporaryChat || rtCfg().AutoDeleteConversation) && !rtCfg().MultiTurn && cookie != "" && xsrf != ""
 +	return p
 +}
@@ -3160,15 +3506,19 @@ index ec3b6e4..683818a 100644
 +	}
 +}
 +
++// deleteConversationFn 是删会话的实现，测试打桩观察 GzXR5e 是否发出。
++var deleteConversationFn = deleteConversation
++
 +// flush 在请求返回前调一次，把收集到的 cid 逐条 GzXR5e 删掉（异步）。
 +// 幂等：多次调用无副作用（map 只在 feed 里写，这里只读）。
 +func (p *phantomCleanup) flush() {
 +	if !p.enabled || len(p.cids) == 0 {
 +		return
 +	}
++	cookie, sapisid, xsrf, authuser := p.creds()
 +	for cid := range p.cids {
 +		logf("[phantom] 删残留会话 %s", cid)
-+		go deleteConversation(cid, p.cookie, p.sapisid, p.xsrf, p.proxy, p.authuser)
++		go deleteConversationFn(cid, cookie, sapisid, xsrf, p.proxy, authuser)
 +	}
 +}
 +
@@ -3386,7 +3736,7 @@ index e53aad5..b1d80f4 100644
  	// 匿名优先（#20）：不需要登录态能力的请求（纯文本、非思考、无工具、无图）走匿名、
  	// 不占 cookie 账号，省账号额度；需要登录才挑号。默认 false，见 modelNeedsLogin。
 diff --git a/internal/app/server.go b/internal/app/server.go
-index 2dafb80..ba7b589 100644
+index 2dafb80..8f2b94f 100644
 --- a/internal/app/server.go
 +++ b/internal/app/server.go
 @@ -1,6 +1,7 @@
@@ -3402,7 +3752,7 @@ index 2dafb80..ba7b589 100644
  )
  
 -const Version = "4.28.0"
-+const Version = "4.28.0-magpie.1"
++const Version = "4.28.0-magpie.2"
  
  func writeJSON(w http.ResponseWriter, status int, data interface{}) {
  	body, _ := json.Marshal(data)
@@ -3510,10 +3860,10 @@ index 2dafb80..ba7b589 100644
  		if downgraded {
 diff --git a/internal/app/stall_test.go b/internal/app/stall_test.go
 new file mode 100644
-index 0000000..cfdd6cf
+index 0000000..bbbf6a1
 --- /dev/null
 +++ b/internal/app/stall_test.go
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,204 @@
 +package app
 +
 +import (
@@ -3560,7 +3910,9 @@ index 0000000..cfdd6cf
 +// 180 秒时还在写的回复被拦腰掐掉。
 +func TestStallWatchKeepsAReplyThatKeepsComing(t *testing.T) {
 +	withRequestTimeout(t, 1) // 整次限时的客户端 1 秒就掐，回复要写 1.2 秒
-+	withStallLimit(t, 150*time.Millisecond)
++	// 沉默窗口放宽到 350ms：-race 下 TLS+HTTP/2 握手偶发 >150ms，窗口太短会在
++	// 握手阶段误掐（同 TestStallWatchWaitsThroughHeartbeats）。
++	withStallLimit(t, 350*time.Millisecond)
 +	for _, p := range upstreamPaths {
 +		t.Run(p.name, func(t *testing.T) {
 +			endpoint, proxyURL := p.start(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3595,7 +3947,10 @@ index 0000000..cfdd6cf
 +// 上游让请求排队时只发心跳帧（实测每 60 秒一个），排得比沉默上限还久也要等到出字：
 +// 以前整次请求限时，排队超过 180 秒的请求一律被掐掉重发。
 +func TestStallWatchWaitsThroughHeartbeats(t *testing.T) {
-+	withStallLimit(t, 150*time.Millisecond)
++	// 沉默窗口放宽到 350ms：linux/arm64 + -race 下 tls-client 首次 TLS+HTTP/2 握手
++	// 偶发 ~170ms，150ms 的窗口会在握手阶段就把请求掐掉（假红）。心跳间隔提到
++	// 180ms 让判据不变：排队心跳总时长（>1s）仍显著大于单次沉默上限。
++	withStallLimit(t, 350*time.Millisecond)
 +	for _, p := range upstreamPaths {
 +		t.Run(p.name, func(t *testing.T) {
 +			endpoint, proxyURL := p.start(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3603,7 +3958,7 @@ index 0000000..cfdd6cf
 +				w.Write([]byte(")]}'\nfirst frame\n"))
 +				w.(http.Flusher).Flush()
 +				for i := 0; i < 6; i++ {
-+					time.Sleep(100 * time.Millisecond)
++					time.Sleep(180 * time.Millisecond)
 +					w.Write([]byte("heartbeat\n"))
 +					w.(http.Flusher).Flush()
 +				}
@@ -3623,7 +3978,7 @@ index 0000000..cfdd6cf
 +			if len(got) == 0 || got[len(got)-1] != "answer" {
 +				t.Fatalf("没等到排队之后的回复：%q", got)
 +			}
-+			if took := time.Since(start); took < 4*150*time.Millisecond {
++			if took := time.Since(start); took < 3*350*time.Millisecond {
 +				t.Fatalf("测试前提不成立：排队只用了 %v，没比沉默上限长", took)
 +			}
 +		})
@@ -4019,7 +4374,7 @@ index 4ea7ac6..861f72e 100644
  			return res, nil
  		}
 diff --git a/internal/app/vision.go b/internal/app/vision.go
-index b0c9724..b1ca7cb 100644
+index b0c9724..dd777e7 100644
 --- a/internal/app/vision.go
 +++ b/internal/app/vision.go
 @@ -160,6 +160,7 @@ func fetchImage(src, proxyURL string, idx int) (pendingUpload, error) {
@@ -4030,6 +4385,97 @@ index b0c9724..b1ca7cb 100644
  		resp, err := getTLSClient().Do(req)
  		if err != nil {
  			return pendingUpload{}, fmt.Errorf("image %d: fetch failed: %w", idx, err)
+@@ -186,6 +187,7 @@ func fetchImage(src, proxyURL string, idx int) (pendingUpload, error) {
+ // newMediaUpload 按 mime 决定这是图片还是视频：
+ //   - video/* → 附件类型位 2（跟抓包一致：文件元组 [路径,2,null,"video/mp4"]），上限 maxVideoBytes；
+ //   - 其余当图片 → 类型位 1，上限 maxImageBytes。
++//
+ // 类型位 1/2 是服务端认媒体种类的开关，填错模型就按错的类型解析附件。
+ func newMediaUpload(data []byte, mime string, idx int) (pendingUpload, error) {
+ 	if len(data) == 0 {
+diff --git a/internal/app/webchannel.go b/internal/app/webchannel.go
+index ade0713..80740e6 100644
+--- a/internal/app/webchannel.go
++++ b/internal/app/webchannel.go
+@@ -537,8 +537,11 @@ func doWebChannelRequest(r wcRequest, proxyURL string, onLine func(string) error
+ 	// 4) 收下行，直到结束帧。正文（ofs=1）要等下行回了对 ofs=0 的确认（[[]]）再发：
+ 	// 抢在确认之前发，服务端只回会话 id 和 rid、不生成（实测时有时无，是时序竞争）。
+ 	// 确认一直不来就按超时补发，免得卡死。
++	// 已收下行帧统一收进 raw，错误返回也要带回 —— 取消/出错路径上
++	// phantomCleanup 要靠 raw 里的 c_xxx 删幽灵会话，跟 doGeminiRequestStop 一致。
+ 	var raw strings.Builder
+ 	var ttfb int64 = -1
++	rawBytes := func() []byte { return []byte(raw.String()) }
+ 	closing := false
+ 	promptSent := false
+ 	sendPrompt := func() error {
+@@ -553,7 +556,7 @@ func doWebChannelRequest(r wcRequest, proxyURL string, onLine func(string) error
+ 		case <-ackTimer.C:
+ 			if !promptSent {
+ 				if err := sendPrompt(); err != nil {
+-					return 0, nil, 0, setCookie, err
++					return 0, rawBytes(), ttfbOr(ttfb, sendAt), setCookie, err
+ 				}
+ 			}
+ 			continue
+@@ -561,21 +564,30 @@ func doWebChannelRequest(r wcRequest, proxyURL string, onLine func(string) error
+ 			if !ok {
+ 				select {
+ 				case e := <-getErr:
+-					return 0, []byte(raw.String()), ttfbOr(ttfb, sendAt), setCookie, e
++					return 0, rawBytes(), ttfbOr(ttfb, sendAt), setCookie, e
+ 				default:
+ 				}
+ 				if ctx.Err() != nil {
+-					return 0, []byte(raw.String()), ttfbOr(ttfb, sendAt), setCookie,
++					return 0, rawBytes(), ttfbOr(ttfb, sendAt), setCookie,
+ 						fmt.Errorf("processSession 超时（%s）: %w", timeout, errUpstreamTimeout)
+ 				}
+-				return 200, []byte(raw.String()), ttfbOr(ttfb, sendAt), setCookie, nil
++				return 200, rawBytes(), ttfbOr(ttfb, sendAt), setCookie, nil
+ 			}
+ 			if ev.Err != nil {
+-				return ev.Err.httpStatus(), []byte(ev.Err.Error()), ttfbOr(ttfb, sendAt), setCookie, nil
++				// body 照旧带错误文本；raw 里已收的帧一并附上，phantomCleanup 还能
++				// 从里面找到 c_xxx。
++				msg := ev.Err.Error()
++				var body []byte
++				if raw.Len() > 0 {
++					body = append(rawBytes(), msg...)
++				} else {
++					body = []byte(msg)
++				}
++				return ev.Err.httpStatus(), body, ttfbOr(ttfb, sendAt), setCookie, nil
+ 			}
+ 			if ev.Ack && !promptSent {
+ 				if err := sendPrompt(); err != nil {
+-					return 0, nil, 0, setCookie, err
++					return 0, rawBytes(), ttfbOr(ttfb, sendAt), setCookie, err
+ 				}
+ 			}
+ 			if ev.Line != "" {
+@@ -586,7 +598,7 @@ func doWebChannelRequest(r wcRequest, proxyURL string, onLine func(string) error
+ 				raw.WriteByte('\n')
+ 				if onLine != nil {
+ 					if err := onLine(ev.Line); err != nil {
+-						return 200, []byte(raw.String()), ttfb, setCookie, err
++						return 200, rawBytes(), ttfb, setCookie, err
+ 					}
+ 				}
+ 			}
+@@ -596,10 +608,10 @@ func doWebChannelRequest(r wcRequest, proxyURL string, onLine func(string) error
+ 				go func() { _ = post(2, ofs2) }()
+ 			}
+ 			if ev.End {
+-				return 200, []byte(raw.String()), ttfbOr(ttfb, sendAt), setCookie, nil
++				return 200, rawBytes(), ttfbOr(ttfb, sendAt), setCookie, nil
+ 			}
+ 		case <-ctx.Done():
+-			return 0, []byte(raw.String()), ttfbOr(ttfb, sendAt), setCookie,
++			return 0, rawBytes(), ttfbOr(ttfb, sendAt), setCookie,
+ 				fmt.Errorf("processSession 超时（%s）: %w", timeout, errUpstreamTimeout)
+ 		}
+ 	}
 diff --git a/internal/app/xsrf.go b/internal/app/xsrf.go
 index 254d686..e008abb 100644
 --- a/internal/app/xsrf.go
