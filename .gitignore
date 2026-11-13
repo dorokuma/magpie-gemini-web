@@ -20,3 +20,6 @@ __pycache__/
 docs/research/
 docs/design/
 scripts/research/
+
+# Local agent notes: whitelist mode, add -f individual entries worth publishing
+.agents/notes/
