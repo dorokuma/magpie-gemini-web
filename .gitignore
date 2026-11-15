@@ -23,3 +23,6 @@ scripts/research/
 
 # Local agent notes: whitelist mode, add -f individual entries worth publishing
 .agents/notes/
+
+# Local code index
+.codegraph/

@@ -1,12 +1,12 @@
 # <img src="docs/logo.svg" width="28" height="28" align="top" alt="" /> magpie-gemini-web
 
-[![npm version](https://img.shields.io/npm/v/magpie-gemini-web?style=flat-square&logo=npm&color=4f46e5)](https://www.npmjs.com/package/magpie-gemini-web) [![npm downloads](https://img.shields.io/npm/dw/magpie-gemini-web?style=flat-square&color=06b6d4)](https://www.npmjs.com/package/magpie-gemini-web) [![Magpie Plugin](https://img.shields.io/badge/Magpie-Plugin-3b82f6?style=flat-square)](https://usemagpie.ai/) [![Node.js >= 22](https://img.shields.io/badge/node-%3E%3D22-8b5cf6?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-6366f1?style=flat-square)](https://github.com/BUKOWSKIREAL/magpie-gemini-web) [![License: MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@dorokuma/magpie-gemini-web?style=flat-square&logo=npm&color=4f46e5)](https://www.npmjs.com/package/@dorokuma/magpie-gemini-web) [![npm downloads](https://img.shields.io/npm/dw/@dorokuma/magpie-gemini-web?style=flat-square&color=06b6d4)](https://www.npmjs.com/package/@dorokuma/magpie-gemini-web) [![Magpie Plugin](https://img.shields.io/badge/Magpie-Plugin-3b82f6?style=flat-square)](https://usemagpie.ai/) [![Node.js >= 22](https://img.shields.io/badge/node-%3E%3D22-8b5cf6?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-6366f1?style=flat-square)](https://github.com/dorokuma/magpie-gemini-web) [![License: MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](LICENSE)
 
 [中文](README.md) | English
 
 Use **Google AI Studio** and **Gemini on the web** through your Google account in [Magpie](https://usemagpie.ai/). The plugin runs [AIStudio2API](https://github.com/Mag1cFall/AIStudio2API) and [gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go) locally, providing chat, native function calling, Nano Banana image generation, and Deep Research through OpenAI-compatible and Gemini APIs.
 
-> **New model support:** **Google AI Studio (`ai-studio`)** automatically follows official stable backend releases and supports **`gemini-4-hydrogen`** (including the `xhigh` thinking tier), **`gemini-4-carbon`** (requires an eligible account tier such as Google AI Ultra), and **`gemini-4-argon`**. **Gemini Web (`gemini-web`)** is backed by this fork's self-hosted backend `4.28.0-magpie.5`, which natively supports dedicated `gemini-4-carbon` / `gemini-4-hydrogen` model IDs (including `-thinking` variants) and mutually recognizes slot upgrades/downgrades under `strict_model`; signed-in `gemini-4-argon` still has a known hang issue in [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53), so `ai-studio` is recommended.
+> **New model support:** **Google AI Studio (`ai-studio`)** automatically follows official stable backend releases and supports **`gemini-4-hydrogen`** (including the `xhigh` thinking tier), **`gemini-4-carbon`** (requires an eligible account tier such as Google AI Ultra), and **`gemini-4-argon`**. **Gemini Web (`gemini-web`)** is backed by [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0), which natively supports dedicated `gemini-4-carbon` / `gemini-4-hydrogen` model IDs (including `-thinking` variants) and mutually recognizes slot upgrades/downgrades under `strict_model`; signed-in `gemini-4-argon` still has a known hang issue in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53), so `ai-studio` is recommended.
 
 ## Which Provider Should I Choose?
 
@@ -15,20 +15,22 @@ The plugin provides two independent providers that can be used individually or t
 | Feature | Google AI Studio (`ai-studio`) | Gemini Web (`gemini-web`) |
 | :--- | :--- | :--- |
 | **Best for** | **Primary use & coding agents (recommended)** | General chat & web quota |
-| **Key models** | `gemini-4-carbon` (Ultra / eligible accounts), `gemini-4-hydrogen`, `gemini-4-argon`, `gemini-3.1-pro`, Flash series, Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen` (including `-thinking` variants), `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro`, `gemini-4-argon` (see [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53)) |
+| **Key models** | `gemini-4-carbon` (Ultra / eligible accounts), `gemini-4-hydrogen`, `gemini-4-argon`, `gemini-3.1-pro`, Flash series, Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen` (including `-thinking` variants), `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro`, `gemini-4-argon` (see [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53)) |
 | **Tool calling** | **Native Function Calling**, reliable | Prompt-emulated (experimental; Flash often skips tools) |
 | **Thinking levels** | Supported levels from the model catalog: `minimal` / `low` / `medium` / `high` / `xhigh` (Hydrogen) | `low` (base) / `medium` (`-thinking-medium`, `gemini-4-argon` only) / `high` (`-thinking` extended thinking) |
 | **Image input** | On by default; chat models read images | On by default; chat models read images (needs a signed-in cookie) |
 | **Image generation** | Nano Banana models, for Magpie's image generation (Magpie v0.1.2075+, see below) | Not supported |
 | **Sign-in method** | Automatic official installation; confirm an imported account | Copy `cookie` from a private/incognito window |
 | **Usage cards** | Shows models currently on cooldown and recovery times | Syncs **5-hour** & **weekly** usage and reset times from the web |
-| **Local backend** | AIStudio2API (automatic installation and stable updates) | gemini-web2api-go (`4.28.0-magpie.5` optimized build) |
+| **Local backend** | AIStudio2API (automatic installation and stable updates) | gemini-web2api-go (`v5.0.0` pinned binary) |
 
 ---
 
 ## Quick Start
 
-Install **magpie-gemini-web** from the Magpie plugin market, then sign in to either (or both) providers below. By default, the plugin downloads the backend, verifies its SHA-256 checksum, and runs it in the background, with no Go installation required. AI Studio automatically follows official stable releases by default. You can disable automatic updates, select your own executable or connect an independent service.
+Install **@dorokuma/magpie-gemini-web** from the Magpie plugin market, then sign in to either (or both) providers below. By default, the plugin downloads the backend, verifies its SHA-256 checksum, and runs it in the background, with no Go installation required.
+
+> **Migrating from the legacy package:** since `0.15.0` the npm package is the scoped `@dorokuma/magpie-gemini-web` (previously the unscoped `magpie-gemini-web`). If you installed the old package, remove `magpie-gemini-web` from the Magpie plugin market and install the new one. The local data directory `~/.local/share/magpie-gemini-web`, saved Google accounts, cookies, database and credentials are all preserved—no sign-in or cookie re-import is needed. During the transition, uninstall cleanup recognizes both package names and never mistakes the new plugin for removed. AI Studio automatically follows official stable releases by default. You can disable automatic updates, select your own executable or connect an independent service.
 
 ### Option 1: Google AI Studio (`ai-studio`)
 
@@ -120,18 +122,18 @@ Tool calling and image input are enabled by default. Configure plugin options vi
 
 ```bash
 # Turn image input off only for Gemini Web, keeping it on for AI Studio
-magpie plugin options magpie-gemini-web '{"allowImages":false,"studio":{"allowImages":true}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"allowImages":false,"studio":{"allowImages":true}}'
 
 # Turn image input off for AI Studio
-magpie plugin options magpie-gemini-web '{"studio":{"allowImages":false}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"allowImages":false}}'
 
 # Configure a proxy for AI Studio
-magpie plugin options magpie-gemini-web '{"studio":{"proxy":"http://127.0.0.1:7890"}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"proxy":"http://127.0.0.1:7890"}}'
 ```
 
 > **Windows PowerShell**: `magpie` runs the `magpie.cmd` wrapper, which loses the double quotes inside the JSON when it passes the arguments on. Call the program behind it directly instead: it is in the same folder as `magpie.cmd` (which `where.exe magpie` finds), named something like `magpie-windows-amd64.exe`, and Magpie's Settings > Command line shows it too. How to write it depends on the PowerShell version (`$PSVersionTable.PSVersion` shows it):
-> - PowerShell 7.3 or later, default settings: `& "<full path to the program>" plugin options magpie-gemini-web '{"allowImages":true}'`
-> - Windows PowerShell 5.1 (built into Windows): it doesn't escape the double quotes in an argument for you, so write them as `\"`: `& "<full path to the program>" plugin options magpie-gemini-web '{\"allowImages\":true}'`
+> - PowerShell 7.3 or later, default settings: `& "<full path to the program>" plugin options @dorokuma/magpie-gemini-web '{"allowImages":true}'`
+> - Windows PowerShell 5.1 (built into Windows): it doesn't escape the double quotes in an argument for you, so write them as `\"`: `& "<full path to the program>" plugin options @dorokuma/magpie-gemini-web '{\"allowImages\":true}'`
 
 | Option | Default | Scope | Description |
 | :--- | :--- | :--- | :--- |
@@ -227,15 +229,15 @@ When a plugin error asks you to run a command, it includes the full ready-to-cop
 - Models with `-build` or `assistant_route` are filtered out: they inject the Build coding assistant's own system prompt and are not offered as ordinary Agent models. Refresh with `magpie provider models ai-studio` after upgrading.
 
 **Gemini Web optimized backend upgrades & rollback:**
-- The missing multi-account index in [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53) is fixed. Reimport affected cookies or correct the index in backend account management. A successful account check does not guarantee generation; signed-in `gemini-4-argon` hangs remain unresolved upstream (this build still uses StreamGenerate and logs that `web_channel` is ignored when enabled), so prefer `ai-studio` for Argon. This fork's backend `4.28.0-magpie.5` natively exposes dedicated `gemini-4-carbon` and `gemini-4-hydrogen` model IDs (including `-thinking` variants); its `strict_model` slot check mutually recognizes display-name upgrades/downgrades, so paid accounts whose `gemini-3.8-flash` calls are routed to `4 Hydrogen` are identified correctly instead of failing with `429 model_downgraded`.
-- One-click setup uses [4.28.0-magpie.5](https://github.com/dorokuma/magpie-gemini-web/releases/tag/backend-v4.28.0-magpie.5) by default (built from pinned upstream v4.28.0 with XSRF caching, request cancellation propagation, early tool-call completion, Argon/Carbon/Hydrogen model verification and phantom-conversation auto cleanup). Chat requests are timed by silence: while Google queues a request it sends a heartbeat every 60 s, and the backend waits through it for the first words. A try is given up, and retried, only after Google has sent nothing for `request_timeout_sec` (180 s by default), so a long reply that keeps coming is never cut off either.
+- The missing multi-account index in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53) is fixed. Reimport affected cookies or correct the index in backend account management. A successful account check does not guarantee generation; signed-in `gemini-4-argon` hangs remain unresolved upstream (this build still uses StreamGenerate and logs that `web_channel` is ignored when enabled), so prefer `ai-studio` for Argon. Backend [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) natively exposes dedicated `gemini-4-carbon` and `gemini-4-hydrogen` model IDs (including `-thinking` variants); its `strict_model` slot check mutually recognizes display-name upgrades/downgrades, so paid accounts whose `gemini-3.8-flash` calls are routed to `4 Hydrogen` are identified correctly instead of failing with `429 model_downgraded`.
+- One-click setup pins the prebuilt [v5.0.0](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) binaries from the backend repository by default (one repo, one artifact: six-platform SHA-256 pins live in `lib/backend-release.json`; the plugin no longer patches and rebuilds the backend). Chat requests are timed by silence: while Google queues a request it sends a heartbeat every 60 s, and the backend waits through it for the first words. A try is given up, and retried, only after Google has sent nothing for `request_timeout_sec` (180 s by default), so a long reply that keeps coming is never cut off either.
 - **Upgrading:** Running backends are not interrupted automatically. Stop the existing process (PID in `backend.pid` inside the data directory); the next Magpie launch or request will upgrade the binary while preserving config and cookies.
-- **Rollback to upstream / restore optimized build** (run in the plugin directory after stopping the backend):
+- **Rollback to upstream / restore the pinned build** (run in the plugin directory after stopping the backend):
   ```bash
-  npm run backend:install:upstream  # Roll back and pin to official v4.28.0
-  npm run backend:install           # Restore default optimized build
+  npm run backend:install:upstream  # Roll back and pin to upstream zexadev v4.28.0
+  npm run backend:install           # Restore the default pinned v5.0.0
   ```
-- For reproducible builds and release procedures, see [docs/backend-release.md](docs/backend-release.md).
+- For pin sync, verification and smoke procedures, see [docs/backend-release.md](docs/backend-release.md).
 
 </details>
 
@@ -250,11 +252,11 @@ MIT. The upstream `gemini-web2api-go` project is also MIT (see `LICENSE-UPSTREAM
 ## Star History
 
 <p align="center">
-  <a href="https://www.star-history.com/#BUKOWSKIREAL/magpie-gemini-web&amp;Date">
+  <a href="https://www.star-history.com/#dorokuma/magpie-gemini-web&amp;Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date&amp;theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date" />
-      <img alt="GitHub star history for magpie-gemini-web" src="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date" width="800" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date&amp;theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date" />
+      <img alt="GitHub star history for magpie-gemini-web" src="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date" width="800" />
     </picture>
   </a>
 </p>

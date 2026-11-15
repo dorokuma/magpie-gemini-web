@@ -12,7 +12,8 @@ import {
   stopBackend,
   cleanBackend,
   hasBackendAssets,
-  computeFileHash
+  computeFileHash,
+  getDataDir
 } from '../lib/native.mjs';
 
 function makeTempDir() {
@@ -20,6 +21,11 @@ function makeTempDir() {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
+
+it('getDataDir keeps the ~/.local/share/magpie-gemini-web default and honors GEMINI_WEB_DATA_DIR', () => {
+  assert.equal(getDataDir({}), path.join(os.homedir(), '.local', 'share', 'magpie-gemini-web'));
+  assert.equal(getDataDir({ GEMINI_WEB_DATA_DIR: '/custom/dir' }), '/custom/dir');
+});
 
 describe('22. Setup helper hash mismatch/download failure no executable installed', () => {
   it('aborts on download failure and leaves no executable', async () => {

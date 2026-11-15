@@ -86,7 +86,7 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             node --test test/studio*.test.mjs
           else
-            npm test
+            make check
           fi
           npm pack --dry-run
       - uses: actions/upload-artifact@v4

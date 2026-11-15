@@ -26,7 +26,9 @@ import {
   isPluginInMagpie,
   cleanDownloadedAssets,
   registerMagpieCleanup,
-  ensureDetachedWatcher
+  ensureDetachedWatcher,
+  verifyWatcherIdentity,
+  DETACHED_WORKER_PATH
 } from '../lib/cleanup.mjs';
 import { GeminiWebPlugin } from '../index.mjs';
 
@@ -228,9 +230,19 @@ describe('Automatic & Manual Cleanup of Downloaded Assets', () => {
     fs.writeFileSync(path.join(magpieDir, 'plugins.json'), '{not-valid');
     assert.equal(isPluginInMagpie(magpieDir), null);
 
-    // Installed via npm spec
+    // Installed via npm spec (legacy unscoped name)
     fs.writeFileSync(path.join(magpieDir, 'plugins.json'), JSON.stringify({
       plugins: [{ spec: 'magpie-gemini-web@0.9.0' }]
+    }));
+    assert.equal(isPluginInMagpie(magpieDir), true);
+
+    // New scoped package name, bare and versioned
+    fs.writeFileSync(path.join(magpieDir, 'plugins.json'), JSON.stringify({
+      plugins: [{ spec: '@dorokuma/magpie-gemini-web' }]
+    }));
+    assert.equal(isPluginInMagpie(magpieDir), true);
+    fs.writeFileSync(path.join(magpieDir, 'plugins.json'), JSON.stringify({
+      plugins: [{ spec: '@dorokuma/magpie-gemini-web@0.15.0' }]
     }));
     assert.equal(isPluginInMagpie(magpieDir), true);
 
@@ -254,6 +266,11 @@ describe('Automatic & Manual Cleanup of Downloaded Assets', () => {
       plugins: [{ spec: validLocalDir }]
     }));
     assert.equal(isPluginInMagpie(magpieDir, { pluginRoot: path.join(tmpRoot, 'other-root') }), true);
+
+    // Local path whose package.json carries the new scoped name -> true
+    fs.writeFileSync(path.join(validLocalDir, 'package.json'), JSON.stringify({ name: '@dorokuma/magpie-gemini-web' }));
+    assert.equal(isPluginInMagpie(magpieDir, { pluginRoot: path.join(tmpRoot, 'other-root') }), true);
+    fs.writeFileSync(path.join(validLocalDir, 'package.json'), JSON.stringify({ name: 'magpie-gemini-web' }));
 
     // Removed (empty plugins list) -> false!
     fs.writeFileSync(path.join(magpieDir, 'plugins.json'), JSON.stringify({
@@ -291,7 +308,7 @@ describe('Automatic & Manual Cleanup of Downloaded Assets', () => {
     fs.writeFileSync(path.join(webDir, 'gemini.db'), 'db-keep');
 
     // Start the detached watcher with a fast poll interval (100ms)
-    const watcher = ensureDetachedWatcher({
+    const watcher = await ensureDetachedWatcher({
       magpieDir,
       studioDir,
       webDir,
@@ -421,7 +438,7 @@ describe('Automatic & Manual Cleanup of Downloaded Assets', () => {
         plugins: [{ spec: 'magpie-gemini-web' }]
       }));
       await seedAssets();
-      const rewatched = handle.ensureWatcher();
+      const rewatched = await handle.ensureWatcher();
       assert.ok(rewatched?.pid, 'ensureWatcher must re-arm after reinstall');
       assert.ok(Number.isInteger(handle.pid) && handle.pid > 0, 'handle.pid must be populated after reinstall');
 
@@ -528,5 +545,147 @@ describe('Automatic & Manual Cleanup of Downloaded Assets', () => {
       }),
       /Cannot stop unknown or foreign process/
     );
+  });
+
+  it('9. a legacy bare-pid watcher is replaced by a JSON pidfile watcher and cannot delete the new pidfile on exit', async () => {
+    const magpieDir = path.join(tmpRoot, 'magpie-takeover');
+    const studioDir = path.join(tmpRoot, 'takeover-studio');
+    const webDir = path.join(tmpRoot, 'takeover-web');
+    const pidFile = path.join(tmpRoot, 'watcher-takeover.pid');
+
+    fs.mkdirSync(magpieDir, { recursive: true });
+    fs.writeFileSync(path.join(magpieDir, 'plugins.json'), JSON.stringify({
+      plugins: [{ spec: '@dorokuma/magpie-gemini-web' }]
+    }));
+    fs.mkdirSync(path.join(studioDir, 'package'), { recursive: true });
+    fs.writeFileSync(path.join(studioDir, 'package', process.platform === 'win32' ? 'aistudio2api.exe' : 'aistudio2api'), 'bin');
+    fs.mkdirSync(path.join(webDir, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(webDir, 'bin', process.platform === 'win32' ? 'gemini-web2api-go.exe' : 'gemini-web2api-go'), 'web-bin');
+    fs.writeFileSync(path.join(webDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: await freePort() }));
+    fs.writeFileSync(path.join(webDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_t', adminToken: 'adm_t' }));
+
+    // First spawn creates the current JSON pidfile.
+    const first = await ensureDetachedWatcher({
+      magpieDir, studioDir, webDir, pidFile, pollMs: 100, spawnFn: spawnWatcher
+    });
+    assert.ok(first?.pid, 'watcher should be spawned');
+    const firstRecord = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    assert.equal(firstRecord.pid, first.pid);
+    assert.equal(typeof firstRecord.version, 'string');
+    assert.ok(firstRecord.pluginRoot, 'JSON pidfile records pluginRoot');
+
+    try {
+      // A current record is reused.
+      const reused = await ensureDetachedWatcher({
+        magpieDir, studioDir, webDir, pidFile, pollMs: 100, spawnFn: spawnWatcher
+      });
+      assert.equal(reused.pid, first.pid);
+      assert.equal(reused.reused, true);
+
+      // Wait until the spawned watcher's process.title rewrite has actually landed
+      // in the real child so the take-over below exercises the steady-state cmdline
+      // ('magpie-gemini-web-cleanup', not the cleanup-detached.cjs argv).
+      if (process.platform === 'linux') {
+        const titleDeadline = Date.now() + 2000;
+        while (Date.now() < titleDeadline) {
+          try {
+            if (fs.readFileSync(`/proc/${first.pid}/cmdline`, 'utf8').includes('magpie-gemini-web-cleanup')) break;
+          } catch {}
+          await sleep(50);
+        }
+      } else {
+        await sleep(400);
+      }
+
+      // Rewrite the pidfile as a legacy bare-PID record, then race two concurrent
+      // take-over calls (like GeminiWebPlugin + AIStudioPlugin registering in one
+      // host): they must share one in-flight replacement instead of double-spawning.
+      fs.writeFileSync(pidFile, `${first.pid}\n`, { mode: 0o600 });
+      const [second, concurrent] = await Promise.all([
+        ensureDetachedWatcher({
+          magpieDir, studioDir, webDir, pidFile, pollMs: 100, spawnFn: spawnWatcher
+        }),
+        ensureDetachedWatcher({
+          magpieDir, studioDir, webDir, pidFile, pollMs: 100, spawnFn: spawnWatcher
+        })
+      ]);
+      assert.ok(second?.pid, 'replacement watcher should be spawned');
+      assert.equal(concurrent.pid, second.pid, 'concurrent ensureDetachedWatcher must share one replacement');
+      assert.notEqual(second.pid, first.pid);
+      assert.equal(second.reused, false);
+      const secondRecord = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+      assert.equal(secondRecord.pid, second.pid);
+
+      // The terminated legacy watcher exits and must not remove the new JSON pidfile.
+      const exitDeadline = Date.now() + 15000;
+      while (Date.now() < exitDeadline && processAlive(first.pid)) {
+        await sleep(100);
+      }
+      await sleep(300);
+      assert.equal(processAlive(first.pid), false, 'legacy watcher must be terminated');
+      assert.ok(fs.existsSync(pidFile), 'new pidfile must survive the old watcher exit');
+      assert.equal(JSON.parse(fs.readFileSync(pidFile, 'utf8')).pid, second.pid);
+      assert.equal(processAlive(second.pid), true);
+
+      // verifyWatcherIdentity: injected run covers the darwin `ps -o command=` and
+      // win32 powershell branches without needing those platforms.
+      const alivePid = process.pid;
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => 'magpie-gemini-web-cleanup\n'), true);
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => 'magpie-gemini-web-cl\n'), true);
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => 'magpie-gemini-web-cli\n'), false);
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => `node ${DETACHED_WORKER_PATH}\n`), true);
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => '/usr/sbin/cron -f\n'), false,
+        'a resolved non-watcher command is foreign, never unknown');
+      assert.equal(verifyWatcherIdentity(alivePid, 'darwin', () => ''), null);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => 'node.exe|"C:\\p\\cleanup-detached.cjs"'), true);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => 'node.exe|magpie-gemini-web-cleanup'), true);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => 'svchost.exe|svchost.exe -k netsvcs'), false);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => 'cron|'), false);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => 'node.exe|'), null);
+      assert.equal(verifyWatcherIdentity(alivePid, 'win32', () => ''), null);
+    } finally {
+      const rec = (() => { try { return JSON.parse(fs.readFileSync(pidFile, 'utf8')); } catch { return null; } })();
+      if (rec?.pid) { try { process.kill(rec.pid, 'SIGKILL'); } catch {} }
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
+  it('10. watcher identity check refuses to signal a foreign process occupying the recorded PID', async () => {
+    const magpieDir = path.join(tmpRoot, 'magpie-foreign');
+    const webDir = path.join(tmpRoot, 'foreign-web');
+    const pidFile = path.join(tmpRoot, 'watcher-foreign.pid');
+    fs.mkdirSync(magpieDir, { recursive: true });
+    fs.mkdirSync(path.join(webDir, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(webDir, 'bin', process.platform === 'win32' ? 'gemini-web2api-go.exe' : 'gemini-web2api-go'), 'bin');
+    fs.writeFileSync(path.join(webDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: await freePort() }));
+    fs.writeFileSync(path.join(webDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_f', adminToken: 'adm_f' }));
+
+    const foreign = spawn(process.execPath, ['-e', 'process.send("ready"); setInterval(() => {}, 1000)'], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc']
+    });
+    const exited = new Promise(resolve => foreign.on('exit', resolve));
+    await new Promise((resolve, reject) => {
+      foreign.once('message', resolve);
+      foreign.once('error', reject);
+    });
+
+    try {
+      // A bare-PID record pointing at a foreign process is never signaled; the stale
+      // record is dropped and a fresh watcher spawned without touching it.
+      fs.writeFileSync(pidFile, `${foreign.pid}\n`, { mode: 0o600 });
+      const res = await ensureDetachedWatcher({
+        magpieDir, studioDir: path.join(tmpRoot, 'foreign-studio'), webDir,
+        pidFile, pollMs: 100, spawnFn: spawnWatcher
+      });
+      assert.equal(processAlive(foreign.pid), true, 'foreign process must not be signaled');
+      if (res?.pid) {
+        assert.notEqual(res.pid, foreign.pid);
+        try { process.kill(res.pid, 'SIGKILL'); } catch {}
+      }
+    } finally {
+      try { foreign.kill('SIGKILL'); } catch {}
+      await exited;
+      fs.rmSync(pidFile, { force: true });
+    }
   });
 });
