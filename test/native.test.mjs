@@ -9,6 +9,9 @@ import {
   installBackend,
   startBackend,
   statusBackend,
+  stopBackend,
+  cleanBackend,
+  hasBackendAssets,
   computeFileHash
 } from '../lib/native.mjs';
 
@@ -254,4 +257,30 @@ describe('23. Native helper config/secrets creation reuse modes 600 without valu
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
   });
+});
+
+it('an uninspectable recorded backend PID keeps backend.pid and blocks clean', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpie-unknown-pid-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const pidFile = path.join(dataDir, 'backend.pid');
+  // An explicit uninspectable-identity stub keeps this test off the host's PowerShell.
+  const uninspectable = { verifyIdentity: () => null };
+  fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
+  // Without bin/ or channel files a backend.pid alone must still count as an asset, and
+  // an identity the stub cannot disprove must keep its record rather than dropping it.
+  assert.equal(hasBackendAssets(dataDir, process.platform, uninspectable), true);
+  assert.equal(fs.existsSync(pidFile), true, 'an unknown-identity PID must not drop its record');
+  fs.mkdirSync(path.join(dataDir, 'bin'), { recursive: true });
+  const binFile = path.join(dataDir, 'bin', process.platform === 'win32' ? 'gemini-web2api-go.exe' : 'gemini-web2api-go');
+  fs.writeFileSync(binFile, 'bin');
+  const fetchFn = () => Promise.reject(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }));
+  const stopped = await stopBackend({ dataDir, fetchFn, ...uninspectable });
+  assert.equal(stopped.stopped, false);
+  assert.match(stopped.reported, /Cannot inspect/);
+  assert.equal(fs.existsSync(pidFile), true);
+  const cleaned = await cleanBackend({ dataDir, fetchFn, ...uninspectable });
+  assert.equal(cleaned.stopped, false);
+  assert.equal(cleaned.cleaned, false);
+  assert.equal(fs.existsSync(pidFile), true, 'unknown-identity PID record must survive cleanBackend');
+  assert.equal(fs.existsSync(binFile), true, 'binary must survive cleanBackend');
 });

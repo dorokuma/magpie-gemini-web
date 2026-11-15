@@ -11,13 +11,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const pinPath = path.join(root, 'lib/backend-release.json');
 const release = JSON.parse(fs.readFileSync(pinPath, 'utf8'));
-const args = process.argv.slice(2);
-const writePins = args.includes('--write-pins');
-const verify = args.includes('--verify');
-const requested = args.find(arg => arg.startsWith('--target='))?.slice('--target='.length);
-for (const arg of args) {
-  if (!['--write-pins', '--verify'].includes(arg) && !arg.startsWith('--target=')) throw new Error(`Unknown argument: ${arg}`);
-}
+const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const platforms = {
   'darwin-arm64': ['darwin', 'arm64'],
   'darwin-x64': ['darwin', 'amd64'],
@@ -26,6 +20,24 @@ const platforms = {
   'win32-x64': ['windows', 'amd64'],
   'win32-arm64': ['windows', 'arm64']
 };
+const flags = ['-trimpath', '-buildvcs=false', '-ldflags=-s -w'];
+
+// overrideBackendVersion rewrites the backend's Version declaration (const or var)
+// in already-patched server source, so unit tests and the release CLI share it.
+export function overrideBackendVersion(server, version) {
+  const versionLine = /^(const|var) Version = "[^"]+"$/m;
+  if (!versionLine.test(server)) throw new Error('Backend version declaration not found');
+  return server.replace(versionLine, (_, kw) => `${kw} Version = ${JSON.stringify(version)}`);
+}
+
+async function main() {
+const args = process.argv.slice(2);
+const writePins = args.includes('--write-pins');
+const verify = args.includes('--verify');
+const requested = args.find(arg => arg.startsWith('--target='))?.slice('--target='.length);
+for (const arg of args) {
+  if (!['--write-pins', '--verify'].includes(arg) && !arg.startsWith('--target=')) throw new Error(`Unknown argument: ${arg}`);
+}
 const target = requested === 'host' ? `${process.platform}-${process.arch}` : requested;
 if (target && !platforms[target]) throw new Error(`Unsupported target: ${target}`);
 if (writePins && (target || verify)) throw new Error('--write-pins requires a full build without --verify');
@@ -39,9 +51,7 @@ const env = { ...process.env, CGO_ENABLED: '0', GOFLAGS: '', GOEXPERIMENT: '',
   GOTOOLCHAIN: `go${release.goVersion}`, GOAMD64: 'v1', GOARM64: 'v8.0' };
 for (const name of ['ARGON_PROBE_COOKIE', 'GW2A_UPLOAD_PROBE', 'SQL_DSN', 'GOOS', 'GOARCH']) delete env[name];
 const go = (argv, extraEnv = {}) => execFileSync('go', argv, { cwd: source, env: { ...env, ...extraEnv }, stdio: 'inherit' });
-const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const patchPath = path.join(root, 'patches/argon.patch');
-const flags = ['-trimpath', '-buildvcs=false', '-ldflags=-s -w'];
 
 try {
   let upstream = path.join(root, 'backend-source');
@@ -61,9 +71,7 @@ try {
   execFileSync('git', ['apply', patchPath], { cwd: source, stdio: 'inherit' });
   const versionPath = path.join(source, 'internal/app/server.go');
   const server = fs.readFileSync(versionPath, 'utf8');
-  const versionLine = /^const Version = "[^"]+"$/m;
-  if (!versionLine.test(server)) throw new Error('Backend version declaration not found');
-  fs.writeFileSync(versionPath, server.replace(versionLine, `const Version = ${JSON.stringify(release.version)}`));
+  fs.writeFileSync(versionPath, overrideBackendVersion(server, release.version));
   console.log(`Testing ${release.version} from ${release.upstream.commit} with patches/argon.patch`);
   go(['version']);
   go(['test', './...', '-count=1']);
@@ -108,4 +116,16 @@ try {
   console.log(`Release artifacts ready: ${output}`);
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });
+}
+}
+
+let invokedAs;
+// A non-path argv[1] (a subcommand word or a dangling path) must not break an import.
+try { invokedAs = process.argv[1] && fs.realpathSync(process.argv[1]); } catch {}
+const selfPath = fs.realpathSync(fileURLToPath(import.meta.url));
+if (invokedAs === selfPath) {
+  main().catch(err => {
+    console.error(err?.message || err);
+    process.exitCode = 1;
+  });
 }
