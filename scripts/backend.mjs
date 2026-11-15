@@ -39,6 +39,9 @@ async function main() {
     }
     case 'clean': {
       const res = await cleanBackend(options);
+      if (!res.cleaned) {
+        throw new Error(res.reported || 'Failed to clean Gemini Web backend assets');
+      }
       console.log(`Cleaned Gemini Web backend assets (preserved accounts & config): ${res.removed.length ? res.removed.join(', ') : 'nothing to remove'}`);
       break;
     }

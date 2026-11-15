@@ -4,8 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 import { backendChannel, binaryPath, ensureBackend, installBackend, pinnedBinary,
   PINNED_BINARIES, UPSTREAM_BINARIES } from '../lib/native.mjs';
+import { overrideBackendVersion } from '../scripts/backend-release.mjs';
 
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function fixture(t) {
@@ -30,7 +35,7 @@ it('ships pinned optimized and rollback downloads for all six supported targets'
     const [platform, arch] = key.split('-');
     const optimized = pinnedBinary(platform, arch);
     const upstream = pinnedBinary(platform, arch, 'upstream');
-    assert.match(optimized.url, /^https:\/\/github\.com\/dorokuma\/magpie-gemini-web\/releases\/download\/backend-v4\.28\.0-magpie\.3\//);
+    assert.match(optimized.url, /^https:\/\/github\.com\/dorokuma\/magpie-gemini-web\/releases\/download\/backend-v4\.28\.0-magpie\.5\//);
     assert.match(optimized.sha256, /^[a-f0-9]{64}$/);
     assert.match(upstream.url, /^https:\/\/github\.com\/zexadev\/gemini-web2api-go\/releases\/download\/v4\.28\.0\//);
     assert.notEqual(optimized.sha256, upstream.sha256);
@@ -94,6 +99,34 @@ it('persists an explicit upstream rollback across automatic starts and can switc
   await installBackend({ dataDir, platform: 'darwin', arch: 'arm64', fetchFn: async () => new Response(optimized) });
   assert.equal(backendChannel(dataDir), 'optimized');
   assert.deepEqual(fs.readFileSync(binaryPath(dataDir, 'darwin')), optimized);
+});
+
+it('overrideBackendVersion rewrites var declarations with leading comment lines', () => {
+  const source = '// patched in by the fork build\nvar Version = "dev"\nconst other = 1;\n';
+  const out = overrideBackendVersion(source, '4.28.0-magpie.5');
+  assert.match(out, /^var Version = "4\.28\.0-magpie\.5"$/m);
+  assert.ok(out.includes('const other = 1;'));
+});
+
+it('overrideBackendVersion rewrites const declarations', () => {
+  const source = 'package app\n\nconst Version = "4.28.0"\n';
+  const out = overrideBackendVersion(source, '4.28.0-magpie.5');
+  assert.match(out, /^const Version = "4\.28\.0-magpie\.5"$/m);
+});
+
+it('overrideBackendVersion rejects source without a Version declaration', () => {
+  assert.throws(() => overrideBackendVersion('package app\nconst version = "x"\n', '1.0.0'),
+    /Backend version declaration not found/);
+});
+
+it('overrideBackendVersion keeps $ replacement patterns in the version literal', () => {
+  assert.equal(overrideBackendVersion('var Version = "dev"\n', '4.28.0-$&'), 'var Version = "4.28.0-$&"\n');
+});
+
+it('importing the release script under a non-path argv[1] does not run main or throw', () => {
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e',
+    "import './scripts/backend-release.mjs'", 'check'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(out, '');
 });
 
 it('a failed upgrade keeps the previous binary, channel, config, secrets and database', async t => {

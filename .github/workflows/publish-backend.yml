@@ -95,9 +95,9 @@ jobs:
           execFileSync('git', ['apply', patchPath], { cwd: source, stdio: 'inherit' });
           const versionPath = path.join(source, 'internal/app/server.go');
           const server = fs.readFileSync(versionPath, 'utf8');
-          const versionLine = /^const Version = "[^"]+"$/m;
+          const versionLine = /^(const|var) Version = "[^"]+"$/m;
           assert.ok(versionLine.test(server), 'Backend version declaration not found');
-          fs.writeFileSync(versionPath, server.replace(versionLine, `const Version = ${JSON.stringify(release.version)}`));
+          fs.writeFileSync(versionPath, server.replace(versionLine, (_, kw) => `${kw} Version = ${JSON.stringify(release.version)}`));
           const sourceName = `gemini-web2api-go_v${release.version}_source.tar.gz`;
           const sourceArchive = fs.openSync(path.join(outDir, sourceName), 'w');
           try {
