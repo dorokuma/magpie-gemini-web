@@ -37,10 +37,38 @@ jobs:
           import fs from 'node:fs';
           import assert from 'node:assert/strict';
           import { execFileSync } from 'node:child_process';
-          assert.match(process.env.RELEASE_TAG, /^v\d+\.\d+\.\d+$/);
-          const release = JSON.parse(execFileSync('gh', ['release', 'view', process.env.RELEASE_TAG, '--repo', process.env.GITHUB_REPOSITORY, '--json', 'targetCommitish'], { encoding: 'utf8' }));
-          assert.match(release.targetCommitish, /^[0-9a-f]{40}$/);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'sha=' + release.targetCommitish + '\n');
+          const repo = process.env.GITHUB_REPOSITORY;
+          const tag = process.env.RELEASE_TAG;
+          assert.match(tag, /^v\d+\.\d+\.\d+$/);
+          // gh release view proves the release exists; targetCommitish may be a
+          // branch name when the release was created on an already-pushed tag.
+          const release = JSON.parse(execFileSync('gh', ['release', 'view', tag, '--repo', repo, '--json', 'targetCommitish'], { encoding: 'utf8' }));
+          let commitSha;
+          const matchingRefs = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `repos/${repo}/git/matching-refs/tags/${tag}`], { encoding: 'utf8' })).flat();
+          const tagRef = matchingRefs.find(r => r && r.ref === `refs/tags/${tag}`) ?? null;
+          if (tagRef) {
+            // The tag exists on the remote: it must be annotated, and its peeled
+            // commit is the only sha we lock (targetCommitish may say "main").
+            let obj = tagRef.object;
+            assert.equal(obj.type, 'tag', `Remote tag ${tag} must be annotated (lightweight tags are refused)`);
+            let depth = 0;
+            while (obj.type === 'tag') {
+              assert.ok(++depth <= 10, `Tag chain depth exceeded for ${tag}`);
+              obj = JSON.parse(execFileSync('gh', ['api', `repos/${repo}/git/tags/${obj.sha}`], { encoding: 'utf8' })).object;
+            }
+            assert.equal(obj.type, 'commit', `Annotated tag ${tag} must resolve to a commit, got ${obj.type}`);
+            assert.match(obj.sha, /^[0-9a-f]{40}$/, `Peeled commit sha for ${tag} must be a 40-char hex`);
+            if (/^[0-9a-f]{40}$/.test(release.targetCommitish)) {
+              assert.equal(release.targetCommitish, obj.sha, 'Release targetCommitish disagrees with the annotated tag commit');
+            }
+            commitSha = obj.sha;
+          } else {
+            // Pre-release draft mode: the remote git tag is not created yet, so
+            // targetCommitish must already be an exact 40-char commit sha.
+            assert.match(release.targetCommitish, /^[0-9a-f]{40}$/, `Remote tag ${tag} not found; release targetCommitish must be an exact commit sha, got ${release.targetCommitish}`);
+            commitSha = release.targetCommitish;
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'sha=' + commitSha + '\n');
           JS
   official-studio:
     needs: release-commit
@@ -82,10 +110,34 @@ jobs:
           assert.match(tag, /^v\d+\.\d+\.\d+$/);
 
           const rel = JSON.parse(execFileSync('gh', ['release', 'view', tag, '--repo', repo, '--json', 'isDraft,targetCommitish,assets'], { encoding: 'utf8' }));
-          assert.match(rel.targetCommitish, /^[0-9a-f]{40}$/, 'Release targetCommitish must be an exact 40-char commit SHA');
-          assert.equal(rel.targetCommitish, process.env.VERIFIED_COMMIT, 'Release target changed after five-platform official verification');
+          let commitSha;
+          const matchingRefs = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `repos/${repo}/git/matching-refs/tags/${tag}`], { encoding: 'utf8' })).flat();
+          const tagRef = matchingRefs.find(r => r && r.ref === `refs/tags/${tag}`) ?? null;
+          if (tagRef) {
+            // The tag exists on the remote: it must be annotated, and its peeled
+            // commit is the only sha we lock (targetCommitish may say "main").
+            let obj = tagRef.object;
+            assert.equal(obj.type, 'tag', `Remote tag ${tag} must be annotated (lightweight tags are refused)`);
+            let depth = 0;
+            while (obj.type === 'tag') {
+              assert.ok(++depth <= 10, `Tag chain depth exceeded for ${tag}`);
+              obj = JSON.parse(execFileSync('gh', ['api', `repos/${repo}/git/tags/${obj.sha}`], { encoding: 'utf8' })).object;
+            }
+            assert.equal(obj.type, 'commit', `Annotated tag ${tag} must resolve to a commit, got ${obj.type}`);
+            assert.match(obj.sha, /^[0-9a-f]{40}$/, `Peeled commit sha for ${tag} must be a 40-char hex`);
+            if (/^[0-9a-f]{40}$/.test(rel.targetCommitish)) {
+              assert.equal(rel.targetCommitish, obj.sha, 'Release targetCommitish disagrees with the annotated tag commit');
+            }
+            commitSha = obj.sha;
+          } else {
+            // Pre-release draft mode: the remote git tag is not created yet, so
+            // targetCommitish must already be an exact 40-char commit sha.
+            assert.match(rel.targetCommitish, /^[0-9a-f]{40}$/, `Remote tag ${tag} not found; release targetCommitish must be an exact commit sha, got ${rel.targetCommitish}`);
+            commitSha = rel.targetCommitish;
+          }
+          assert.equal(commitSha, process.env.VERIFIED_COMMIT, 'Release target changed after five-platform official verification');
 
-          execFileSync('git', ['checkout', '--detach', rel.targetCommitish], { stdio: 'inherit' });
+          execFileSync('git', ['checkout', '--detach', commitSha], { stdio: 'inherit' });
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           assert.equal(`v${pkg.version}`, tag, `package.json version (${pkg.version}) does not match tag ${tag}`);
 
@@ -100,8 +152,12 @@ jobs:
             assert.equal(sha256, pin.sha256, `Public backend asset hash mismatch for ${key}`);
           }
 
-          const tarball = `${pkg.name}-${pkg.version}.tgz`;
+          const tarball = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`;
           const existing = rel.assets.find(a => a.name === tarball);
+
+          // Gates run on every invocation, including tarball-reuse reruns.
+          execFileSync('make', ['check'], { stdio: 'inherit' });
+          execFileSync('make', ['release-check', `TAG=${tag}`], { stdio: 'inherit' });
 
           if (existing) {
             assert.equal(existing.state, 'uploaded');
@@ -115,7 +171,6 @@ jobs:
             } finally { fs.rmSync(expectedDir, { recursive: true, force: true }); }
           } else {
             assert.equal(rel.isDraft, true, `Release ${tag} must be a private draft before uploading package tarball`);
-            execFileSync('npm', ['test'], { stdio: 'inherit' });
             execFileSync('npm', ['pack'], { stdio: 'inherit' });
             assert.ok(fs.existsSync(tarball), `Expected tarball ${tarball}`);
             execFileSync('gh', ['release', 'upload', tag, tarball, '--repo', repo], { stdio: 'inherit' });
@@ -132,6 +187,20 @@ jobs:
               }
             } else {
               // npm Trusted Publishing via OIDC requires npm >= 11.5.1 and no empty _authToken in .npmrc
+              // OIDC trusted publishing can only be linked to a package that already exists on npmjs.com;
+              // the very first publication of this scoped package must go through the NPM_TOKEN secret.
+              let packument;
+              try {
+                packument = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg.name)}`,
+                  { signal: AbortSignal.timeout(15000) });
+              } catch (err) {
+                // A transient network/timeout failure is not proof the package
+                // is missing; let npm's own publish make the authoritative call.
+                console.warn(`Registry preflight unreachable (${err.message}); proceeding to npm OIDC publish`);
+              }
+              if (packument && packument.status === 404) {
+                throw new Error(`Initial publication of ${pkg.name} requires the NPM_TOKEN secret; npm Trusted Publishing (OIDC) can only be configured after the package already exists on npmjs.com`);
+              }
               execFileSync('npm', ['install', '-g', 'npm@11'], { stdio: 'inherit' });
               execFileSync('npm', ['publish', `./${tarball}`, '--access', 'public', '--provenance'], { stdio: 'inherit' });
             }

@@ -1,12 +1,12 @@
 # <img src="docs/logo.svg" width="28" height="28" align="top" alt="" /> magpie-gemini-web
 
-[![npm version](https://img.shields.io/npm/v/magpie-gemini-web?style=flat-square&logo=npm&color=4f46e5)](https://www.npmjs.com/package/magpie-gemini-web) [![npm downloads](https://img.shields.io/npm/dw/magpie-gemini-web?style=flat-square&color=06b6d4)](https://www.npmjs.com/package/magpie-gemini-web) [![Magpie Plugin](https://img.shields.io/badge/Magpie-Plugin-3b82f6?style=flat-square)](https://usemagpie.ai/) [![Node.js >= 22](https://img.shields.io/badge/node-%3E%3D22-8b5cf6?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-6366f1?style=flat-square)](https://github.com/BUKOWSKIREAL/magpie-gemini-web) [![License: MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@dorokuma/magpie-gemini-web?style=flat-square&logo=npm&color=4f46e5)](https://www.npmjs.com/package/@dorokuma/magpie-gemini-web) [![npm downloads](https://img.shields.io/npm/dw/@dorokuma/magpie-gemini-web?style=flat-square&color=06b6d4)](https://www.npmjs.com/package/@dorokuma/magpie-gemini-web) [![Magpie Plugin](https://img.shields.io/badge/Magpie-Plugin-3b82f6?style=flat-square)](https://usemagpie.ai/) [![Node.js >= 22](https://img.shields.io/badge/node-%3E%3D22-8b5cf6?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-6366f1?style=flat-square)](https://github.com/dorokuma/magpie-gemini-web) [![License: MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](LICENSE)
 
 中文 | [English](README.en.md)
 
 让 [Magpie](https://usemagpie.ai/) 通过你的 Google 账号使用 **Google AI Studio** 与 **Gemini 网页版**。插件在本机自动运行 [AIStudio2API](https://github.com/Mag1cFall/AIStudio2API) 与 [gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go)，提供对话、原生工具调用、Nano Banana 图片生成与 Deep Research 等能力。
 
-> **新模型支持说明**：**Google AI Studio (`ai-studio`)** 默认自动跟随官方最新稳定版后端，现已直接支持 **`gemini-4-hydrogen`**（含 `xhigh` 思考档位）、**`gemini-4-carbon`**（需账号具备对应权益，如 Google AI Ultra）与 **`gemini-4-argon`**。**Gemini Web (`gemini-web`)** 由本自托管 fork 后端 `4.28.0-magpie.5` 原生支持 `gemini-4-carbon` / `gemini-4-hydrogen` 专用模型 ID（含 `-thinking` 思考变体），`strict_model` 开启时也能正确互认槽位升降级；登录态 `gemini-4-argon` 仍存在生成挂起已知问题 [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53)，建议优先使用 `ai-studio`。
+> **新模型支持说明**：**Google AI Studio (`ai-studio`)** 默认自动跟随官方最新稳定版后端，现已直接支持 **`gemini-4-hydrogen`**（含 `xhigh` 思考档位）、**`gemini-4-carbon`**（需账号具备对应权益，如 Google AI Ultra）与 **`gemini-4-argon`**。**Gemini Web (`gemini-web`)** 由后端 [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) 原生支持 `gemini-4-carbon` / `gemini-4-hydrogen` 专用模型 ID（含 `-thinking` 思考变体），`strict_model` 开启时也能正确互认槽位升降级；登录态 `gemini-4-argon` 仍存在生成挂起已知问题 [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53)，建议优先使用 `ai-studio`。
 
 ## 怎么选？
 
@@ -15,20 +15,22 @@
 | 对比项 | Google AI Studio (`ai-studio`) | Gemini Web (`gemini-web`) |
 | :--- | :--- | :--- |
 | **适用场景** | **推荐主力与 Coding Agent 使用** | 日常对话、使用网页版额度 |
-| **主要模型** | `gemini-4-carbon`（Ultra 等有权益账号）、`gemini-4-hydrogen`、`gemini-4-argon`、`gemini-3.1-pro`、Flash 系列、Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen`（含 `-thinking` 变体）、`gemini-3.8-flash`、`gemini-3.6-flash`、`gemini-3.5-flash-lite`、`gemini-3.1-pro`、`gemini-4-argon`（见 [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53)） |
+| **主要模型** | `gemini-4-carbon`（Ultra 等有权益账号）、`gemini-4-hydrogen`、`gemini-4-argon`、`gemini-3.1-pro`、Flash 系列、Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen`（含 `-thinking` 变体）、`gemini-3.8-flash`、`gemini-3.6-flash`、`gemini-3.5-flash-lite`、`gemini-3.1-pro`、`gemini-4-argon`（见 [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53)） |
 | **工具调用** | **原生 Function Calling**，稳定可靠 | 提示词模拟（实验性，Flash 系列常不调工具） |
 | **思考档位** | 按模型目录提供 `minimal` / `low` / `medium` / `high` / `xhigh`（Hydrogen）中支持的档位 | `low`（普通）/ `medium`（`-thinking-medium`，仅 `gemini-4-argon`）/ `high`（`-thinking` 扩展思考） |
 | **图片输入** | 默认开启，对话模型可以读图 | 默认开启，对话模型可以读图（需登录态挂 Cookie） |
 | **图片生成** | Nano Banana 系列模型，供 Magpie 的图片生成使用（需要 Magpie v0.1.2075+，见下文） | 不支持 |
 | **登录方式** | 自动安装官方后端，导入账号后确认连接 | 用无痕窗口登录并复制 `cookie` |
 | **额度卡片** | 显示冷却中的模型与恢复时间 | 同步网页版 **5 小时** 与 **每周** 用量及重置时间 |
-| **本地后端** | AIStudio2API（自动安装并跟随官方稳定版） | gemini-web2api-go (`4.28.0-magpie.5` 优化版) |
+| **本地后端** | AIStudio2API（自动安装并跟随官方稳定版） | gemini-web2api-go (`v5.0.0` 固定 pin 二进制) |
 
 ---
 
 ## 快速开始
 
-在 Magpie 插件市场安装 **magpie-gemini-web** 后，按需登录以下任一（或两个）Provider。默认由插件下载对应后端、校验 SHA-256 并在后台自启，无需安装 Go 或其它依赖。AI Studio 默认自动跟随官方最新稳定版，也可关闭自动更新、指定自己的程序或连接独立服务。
+在 Magpie 插件市场安装 **@dorokuma/magpie-gemini-web** 后，按需登录以下任一（或两个）Provider。
+
+> **从旧包迁移**：`0.15.0` 起 npm 包名为作用域包 `@dorokuma/magpie-gemini-web`（此前为无作用域包 `magpie-gemini-web`）。已装旧包的用户请在 Magpie 插件市场卸载旧的 `magpie-gemini-web` 后重新安装新包；本地数据目录 `~/.local/share/magpie-gemini-web`、已保存的 Google 账号、Cookie、数据库和凭据全部保留，无需重新登录或导 Cookie。迁移期卸载清理同时识别新旧两个包名，不会把新插件误判为已卸载。默认由插件下载对应后端、校验 SHA-256 并在后台自启，无需安装 Go 或其它依赖。AI Studio 默认自动跟随官方最新稳定版，也可关闭自动更新、指定自己的程序或连接独立服务。
 
 ### 方式一：Google AI Studio (`ai-studio`)
 
@@ -120,18 +122,18 @@
 
 ```bash
 # 仅关闭 Gemini Web 的图片输入，保留 AI Studio 的图片输入
-magpie plugin options magpie-gemini-web '{"allowImages":false,"studio":{"allowImages":true}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"allowImages":false,"studio":{"allowImages":true}}'
 
 # 关闭 AI Studio 的图片输入
-magpie plugin options magpie-gemini-web '{"studio":{"allowImages":false}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"allowImages":false}}'
 
 # 为 AI Studio 配置代理
-magpie plugin options magpie-gemini-web '{"studio":{"proxy":"http://127.0.0.1:7890"}}'
+magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"proxy":"http://127.0.0.1:7890"}}'
 ```
 
 > **Windows PowerShell**：`magpie` 实际运行的是 `magpie.cmd` 包装器，它转发参数时会弄丢 JSON 里的双引号。请直接调用它背后的可执行文件：这个文件和 `magpie.cmd` 在同一个文件夹（`where.exe magpie` 可以找到），文件名可能是 `magpie-windows-amd64.exe` 之类，Magpie 的「设置 → 命令行」里也会显示。写法取决于 PowerShell 版本（用 `$PSVersionTable.PSVersion` 查看）：
-> - PowerShell 7.3 及以上，默认设置：`& "<可执行文件的完整路径>" plugin options magpie-gemini-web '{"allowImages":true}'`
-> - Windows PowerShell 5.1（系统自带）：它不会替你转义参数里的双引号，要写成 `\"`：`& "<可执行文件的完整路径>" plugin options magpie-gemini-web '{\"allowImages\":true}'`
+> - PowerShell 7.3 及以上，默认设置：`& "<可执行文件的完整路径>" plugin options @dorokuma/magpie-gemini-web '{"allowImages":true}'`
+> - Windows PowerShell 5.1（系统自带）：它不会替你转义参数里的双引号，要写成 `\"`：`& "<可执行文件的完整路径>" plugin options @dorokuma/magpie-gemini-web '{\"allowImages\":true}'`
 
 | 选项 | 默认值 | 适用范围 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -227,15 +229,15 @@ magpie plugin options magpie-gemini-web '{"studio":{"proxy":"http://127.0.0.1:78
 - 模型列表过滤 `-build` / `assistant_route` 模型：这类模型附带 Build 写代码助手的系统提示词，不作为普通 Agent 模型提供。升级后可执行 `magpie provider models ai-studio` 刷新列表。
 
 **Gemini Web 优化后端升级与回退：**
-- [#53](https://github.com/BUKOWSKIREAL/magpie-gemini-web/issues/53) 的多账号索引漏传已修复，需重新导入受影响的 Cookie 或在后端账号管理中修正索引。账号检测通过不保证生成成功；登录态 `gemini-4-argon` 生成挂起仍待上游完善协议修复（当前优化版仍固定走 StreamGenerate，启用 `web_channel` 会在日志提示被忽略），建议暂用 `ai-studio` 调用 Argon。本 fork 后端 `4.28.0-magpie.5` 已原生收录 `gemini-4-carbon` 与 `gemini-4-hydrogen` 模型 ID（含 `-thinking` 思考变体）；`strict_model` 槽位校验按显示名家族互认升级/降级，付费账号请求 `gemini-3.8-flash` 被路由至 `4 Hydrogen` 时也能正确识别，不会误报 `429 model_downgraded`。
-- 插件默认使用本仓库发布的 [4.28.0-magpie.5](https://github.com/dorokuma/magpie-gemini-web/releases/tag/backend-v4.28.0-magpie.5)（基于上游 v4.28.0 集成 XSRF 缓存、请求取消传播、工具调用提前收尾、Argon/Carbon/Hydrogen 校验与幽灵会话自动清理等补丁）。对话请求按上游沉默计时：Google 让请求排队时每 60 秒发一次心跳，后端会一直等到出字；连续 `request_timeout_sec`（默认 180 秒）没有任何数据才放弃这一次并重试，还在出字的长回复也不会被截断。
+- [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53) 的多账号索引漏传已修复，需重新导入受影响的 Cookie 或在后端账号管理中修正索引。账号检测通过不保证生成成功；登录态 `gemini-4-argon` 生成挂起仍待上游完善协议修复（当前优化版仍固定走 StreamGenerate，启用 `web_channel` 会在日志提示被忽略），建议暂用 `ai-studio` 调用 Argon。后端 [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) 已原生收录 `gemini-4-carbon` 与 `gemini-4-hydrogen` 模型 ID（含 `-thinking` 思考变体）；`strict_model` 槽位校验按显示名家族互认升级/降级，付费账号请求 `gemini-3.8-flash` 被路由至 `4 Hydrogen` 时也能正确识别，不会误报 `429 model_downgraded`。
+- 插件默认固定使用后端仓发布的 [v5.0.0](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) 预编译二进制（一仓一制品，6 平台 SHA-256 pin 在 `lib/backend-release.json`，不再由插件仓打补丁重编）。对话请求按上游沉默计时：Google 让请求排队时每 60 秒发一次心跳，后端会一直等到出字；连续 `request_timeout_sec`（默认 180 秒）没有任何数据才放弃这一次并重试，还在出字的长回复也不会被截断。
 - **旧版升级**：插件不会打断运行中的后端。先停止旧进程（PID 见数据目录 `backend.pid`），下次启动 Magpie 或发请求时会自动更新二进制并保留原有配置与账号。
-- **回退官方版 / 恢复优化版**（停止后端后在插件目录执行）：
+- **回退官方上游版 / 恢复 pin 版**（停止后端后在插件目录执行）：
   ```bash
-  npm run backend:install:upstream  # 回退并固定使用官方 v4.28.0
-  npm run backend:install           # 恢复默认优化版
+  npm run backend:install:upstream  # 回退并固定使用上游 zexadev v4.28.0
+  npm run backend:install           # 恢复默认 pin 的 v5.0.0
   ```
-- 源码复现构建与发布流程见 [docs/backend-release.md](docs/backend-release.md)。
+- pin 同步、校验与冒烟流程见 [docs/backend-release.md](docs/backend-release.md)。
 
 </details>
 
@@ -254,11 +256,11 @@ MIT。上游 `gemini-web2api-go` 同为 MIT（见 `LICENSE-UPSTREAM`）。
 ## Star 趋势
 
 <p align="center">
-  <a href="https://www.star-history.com/#BUKOWSKIREAL/magpie-gemini-web&amp;Date">
+  <a href="https://www.star-history.com/#dorokuma/magpie-gemini-web&amp;Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date&amp;theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date" />
-      <img alt="magpie-gemini-web 的 GitHub Star 增长趋势" src="https://api.star-history.com/svg?repos=BUKOWSKIREAL/magpie-gemini-web&amp;type=Date" width="800" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date&amp;theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date" />
+      <img alt="magpie-gemini-web 的 GitHub Star 增长趋势" src="https://api.star-history.com/svg?repos=dorokuma/magpie-gemini-web&amp;type=Date" width="800" />
     </picture>
   </a>
 </p>

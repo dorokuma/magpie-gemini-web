@@ -12,7 +12,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const args = process.argv.slice(2);
 const packageRoot = args.find(arg => arg.startsWith('--package-root='))?.slice('--package-root='.length) || root;
+const binaryOverride = args.find(arg => arg.startsWith('--binary='))?.slice('--binary='.length);
 const download = args.includes('--download');
+for (const arg of args) {
+  if (!arg.startsWith('--package-root=') && !arg.startsWith('--binary=') && arg !== '--download') {
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+}
+if (binaryOverride && download) throw new Error('--binary and --download are mutually exclusive');
 const { ensureBackend, installBackend, computeFileHash, pinnedBinary } = await import(pathToFileURL(path.join(packageRoot, 'lib/native.mjs')));
 const { importCookie, REQUIRED_COOKIES } = await import(pathToFileURL(path.join(packageRoot, 'lib/setup.mjs')));
 const release = JSON.parse(fs.readFileSync(path.join(packageRoot, 'lib/backend-release.json'), 'utf8'));
@@ -37,9 +44,10 @@ let child, exited, spawnCount = 0, log = '';
 try {
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port,
     log_requests: false, gemini_bl_auto: false, multi_turn: false, temporary_chat: true }), { mode: 0o600 });
-  const localAsset = path.join(root, 'backend-build/release', release.binaries[`${process.platform}-${process.arch}`].asset);
+  const localAsset = binaryOverride ? path.resolve(binaryOverride) : null;
+  if (localAsset && !fs.existsSync(localAsset)) throw new Error(`--binary not found: ${localAsset}`);
   const fetchFn = async (url, init) => {
-    if (!download && url === pin.url) return new Response(fs.readFileSync(localAsset));
+    if (localAsset && url === pin.url) return new Response(fs.readFileSync(localAsset));
     return fetch(url, init);
   };
   const setup = await ensureBackend({ dataDir: dir, fetchFn,
@@ -98,7 +106,7 @@ try {
     await new Promise(resolve => proxyServerB.close(resolve));
   }
   console.log(JSON.stringify({ platform: process.platform, arch: process.arch, version: health.version,
-    sha256: pin.sha256, source: download ? 'GitHub release' : 'local release artifact',
+    sha256: pin.sha256, source: localAsset ? `local binary ${localAsset}` : 'GitHub release',
     install: 'passed', startup: 'passed', auth: 'passed', proxyBind: 'passed', models: models.data.length, reuse: 'passed' }));
 } catch (error) {
   console.error(log);

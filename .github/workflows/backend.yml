@@ -6,10 +6,15 @@ on:
     paths:
       - 'lib/native.mjs'
       - 'lib/backend-release.json'
-      - 'patches/**'
       - 'scripts/backend*.mjs'
+      - 'scripts/sync-backend-pins.mjs'
       - 'test/backend-release.test.mjs'
       - '.github/workflows/backend.yml'
+
+# Cancel superseded runs on the same ref; never interrupt a main run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -22,11 +27,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm test
-      - run: npm pack --dry-run
+      - run: make check
+      - name: Verify pinned binaries match the published release
+        run: node scripts/sync-backend-pins.mjs --verify
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Rebuild linux-x64 from pinned sources and compare SHA-256
+        env:
+          MANIFEST: lib/backend-release.json
+        run: |
+          set -euo pipefail
+          REPO="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.MANIFEST, "utf8")).repository')"
+          TAG="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.MANIFEST, "utf8")).tag')"
+          VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.MANIFEST, "utf8")).version')"
+          EXPECTED="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.MANIFEST, "utf8")).binaries["linux-x64"].sha256')"
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          git clone --depth 1 --branch "$TAG" "https://github.com/${REPO}.git" "$workdir/source"
+          cd "$workdir/source"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -buildvcs=false \
+            -ldflags="-s -w -X gemini-web2api/internal/app.Version=${VERSION}" \
+            -o /tmp/provenance-check .
+          ACTUAL="$(sha256sum /tmp/provenance-check | awk '{print $1}')"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Rebuilt linux-x64 SHA-256 $ACTUAL does not match pinned $EXPECTED"
+            exit 1
+          fi
+          echo "Provenance verified: linux-x64 $ACTUAL"
 
   backend:
-    name: Build and run (${{ matrix.runner }})
+    name: Smoke (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
@@ -48,16 +81,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.27.1'
-          cache: false
-      - name: Rebuild from pinned sources, test, and compare SHA-256
-        run: node scripts/backend-release.mjs --target=host --verify
-      - name: Install and start the real backend with isolated data
-        run: node scripts/backend-smoke.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: backend-${{ matrix.runner }}
-          path: backend-build/release/*
-          if-no-files-found: error
+      - name: Download, verify and start the pinned backend with isolated data
+        run: node scripts/backend-smoke.mjs --download

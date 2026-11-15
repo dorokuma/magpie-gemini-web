@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 import { backendChannel, binaryPath, ensureBackend, installBackend, pinnedBinary,
   PINNED_BINARIES, UPSTREAM_BINARIES } from '../lib/native.mjs';
-import { overrideBackendVersion } from '../scripts/backend-release.mjs';
+import { parseSha256Sums, validateBackendReleaseManifest, syncBackendPins,
+  TARGET_PLATFORMS } from '../scripts/sync-backend-pins.mjs';
 
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function fixture(t) {
@@ -28,18 +29,19 @@ function pinFixture(t, pins, bytes) {
   t.after(() => { pins['darwin-arm64'] = previous; });
 }
 
-it('ships pinned optimized and rollback downloads for all six supported targets', () => {
+it('ships pinned default and rollback downloads for all six supported targets', () => {
   const targets = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-arm64', 'win32-x64'];
   assert.deepEqual(Object.keys(PINNED_BINARIES).sort(), targets);
+  assert.deepEqual(Object.keys(TARGET_PLATFORMS).sort(), targets);
   for (const key of targets) {
     const [platform, arch] = key.split('-');
-    const optimized = pinnedBinary(platform, arch);
+    const pinned = pinnedBinary(platform, arch);
     const upstream = pinnedBinary(platform, arch, 'upstream');
-    assert.match(optimized.url, /^https:\/\/github\.com\/dorokuma\/magpie-gemini-web\/releases\/download\/backend-v4\.28\.0-magpie\.5\//);
-    assert.match(optimized.sha256, /^[a-f0-9]{64}$/);
+    assert.match(pinned.url, /^https:\/\/github\.com\/dorokuma\/gemini-web2api-go\/releases\/download\/v5\.0\.0\//);
+    assert.match(pinned.sha256, /^[a-f0-9]{64}$/);
     assert.match(upstream.url, /^https:\/\/github\.com\/zexadev\/gemini-web2api-go\/releases\/download\/v4\.28\.0\//);
-    assert.notEqual(optimized.sha256, upstream.sha256);
-    assert.equal(optimized.url.endsWith('.exe'), platform === 'win32');
+    assert.notEqual(pinned.sha256, upstream.sha256);
+    assert.equal(pinned.url.endsWith('.exe'), platform === 'win32');
   }
   assert.throws(() => pinnedBinary('linux', 'mips'), /No gemini-web2api-go/);
   assert.throws(() => pinnedBinary('linux', 'x64', 'unknown'), /Invalid backend channel/);
@@ -101,31 +103,52 @@ it('persists an explicit upstream rollback across automatic starts and can switc
   assert.deepEqual(fs.readFileSync(binaryPath(dataDir, 'darwin')), optimized);
 });
 
-it('overrideBackendVersion rewrites var declarations with leading comment lines', () => {
-  const source = '// patched in by the fork build\nvar Version = "dev"\nconst other = 1;\n';
-  const out = overrideBackendVersion(source, '4.28.0-magpie.5');
-  assert.match(out, /^var Version = "4\.28\.0-magpie\.5"$/m);
-  assert.ok(out.includes('const other = 1;'));
+it('parses a real v5.0.0-style SHA256SUMS.txt into all six platform pins', () => {
+  const sums = [
+    '852af30ffbcfd1402905f855e78d41d54a2f62313085aab420423ea0d855e2c1  gemini-web2api-go_v5.0.0_darwin_amd64',
+    'dfdcac8065483176fc42c6387014aa106cfe30175b94c393d7345f596eb26c7a  gemini-web2api-go_v5.0.0_darwin_arm64',
+    '7a13f0e9c3003732eeb6346d16be191f486d1eaa035d61f1e8751ee287680e2a  gemini-web2api-go_v5.0.0_linux_amd64',
+    'c0c468c7c8f85c0772a389586bbc92d7493e27e3b26e5baba0fc749abc427bfe  gemini-web2api-go_v5.0.0_linux_arm64',
+    '08ce950afe2eda4a622f9c1560e578bdb13d00477ac9f20cd5bd62036a4345f4 *gemini-web2api-go_v5.0.0_windows_amd64.exe',
+    'fb36c3b457e6b372b6a528c19ede49637712d384b4623751174aba1d7d621f26  gemini-web2api-go_v5.0.0_windows_arm64.exe'
+  ].join('\n') + '\n';
+  const found = parseSha256Sums(sums, '5.0.0');
+  assert.equal(found.size, 6);
+  assert.equal(found.get('linux-arm64').sha256, 'c0c468c7c8f85c0772a389586bbc92d7493e27e3b26e5baba0fc749abc427bfe');
+  assert.equal(found.get('win32-x64').asset, 'gemini-web2api-go_v5.0.0_windows_amd64.exe');
 });
 
-it('overrideBackendVersion rewrites const declarations', () => {
-  const source = 'package app\n\nconst Version = "4.28.0"\n';
-  const out = overrideBackendVersion(source, '4.28.0-magpie.5');
-  assert.match(out, /^const Version = "4\.28\.0-magpie\.5"$/m);
+it('rejects malformed sums, missing platforms and unexpected assets', () => {
+  const line = key => `${'a'.repeat(64)}  gemini-web2api-go_v5.0.0_${key}`;
+  assert.throws(() => parseSha256Sums('not-a-hash  foo', '5.0.0'), /Malformed SHA256SUMS/);
+  assert.throws(() => parseSha256Sums(line('linux_amd64'), '5.0.0'), /missing platform binaries/);
+  const six = ['darwin_amd64', 'darwin_arm64', 'linux_amd64', 'linux_arm64', 'windows_amd64.exe', 'windows_arm64.exe'];
+  assert.throws(() => parseSha256Sums(six.map(line).join('\n') + `\n${'b'.repeat(64)}  extra`, '5.0.0'), /Unexpected asset/);
 });
 
-it('overrideBackendVersion rejects source without a Version declaration', () => {
-  assert.throws(() => overrideBackendVersion('package app\nconst version = "x"\n', '1.0.0'),
-    /Backend version declaration not found/);
+it('validateBackendReleaseManifest enforces repository, tag, six keys and upstream-hash disjointness', () => {
+  const good = JSON.parse(fs.readFileSync(path.join(ROOT, 'lib/backend-release.json'), 'utf8'));
+  assert.doesNotThrow(() => validateBackendReleaseManifest(good));
+  assert.throws(() => validateBackendReleaseManifest({ ...good, repository: 'x/y' }), /repository/);
+  assert.throws(() => validateBackendReleaseManifest({ ...good, tag: 'v9.9.9' }), /tag/);
+  const broken = JSON.parse(JSON.stringify(good));
+  delete broken.binaries['linux-x64'];
+  assert.throws(() => validateBackendReleaseManifest(broken), /six platform keys/);
+  const clashing = JSON.parse(JSON.stringify(good));
+  clashing.binaries['linux-x64'] = { ...clashing.binaries['linux-x64'], sha256: UPSTREAM_BINARIES['linux-x64'].sha256 };
+  assert.throws(() => validateBackendReleaseManifest(clashing), /duplicates an upstream rollback hash/);
 });
 
-it('overrideBackendVersion keeps $ replacement patterns in the version literal', () => {
-  assert.equal(overrideBackendVersion('var Version = "dev"\n', '4.28.0-$&'), 'var Version = "4.28.0-$&"\n');
+it('syncBackendPins verify-schema reads the committed manifest offline', async () => {
+  const manifest = await syncBackendPins({ pinPath: path.join(ROOT, 'lib/backend-release.json'), mode: 'verify-schema' });
+  assert.equal(manifest.repository, 'dorokuma/gemini-web2api-go');
+  assert.equal(manifest.tag, `v${manifest.version}`);
+  assert.equal(Object.keys(manifest.binaries).length, 6);
 });
 
-it('importing the release script under a non-path argv[1] does not run main or throw', () => {
+it('importing the sync script under a non-path argv[1] does not run main or throw', () => {
   const out = execFileSync(process.execPath, ['--input-type=module', '-e',
-    "import './scripts/backend-release.mjs'", 'check'], { cwd: ROOT, encoding: 'utf8' });
+    "import './scripts/sync-backend-pins.mjs'", 'check'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(out, '');
 });
 

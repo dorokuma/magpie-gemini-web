@@ -1,6 +1,8 @@
 # AI Studio 本地后端与历史构建
 
-本次准备的插件版本为 **0.14.0**，尚未发布。
+本次准备的插件版本为 **0.15.0**（`@dorokuma/magpie-gemini-web`），尚未发布。
+
+> **归档说明**：本文文末以 `BUKOWSKIREAL` 为仓库前缀的 CI run 记录、`lib/studio-release.json` 与 `scripts/studio-signin-candidate.json` 均属历史溯源只读归档：默认安装与自动更新只跟随官方 Mag1cFall/AIStudio2API Release，这些清单和补丁不参与运行时决策，未经明确授权不得修改。
 
 默认接入流程为：安装插件 → 登录 Google AI Studio → 自动下载并启动官方后端 → 添加 Google 账号 → 回到连接页确认。安装和后续自动更新均跟随 [Mag1cFall/AIStudio2API](https://github.com/Mag1cFall/AIStudio2API/releases) 最新稳定版。运行时不依赖 `lib/studio-release.json`，插件发布无需先发布定制 AI Studio 安装包。
 
