@@ -8,6 +8,22 @@ Use **Google AI Studio** and **Gemini on the web** through your Google account i
 
 > **New model support:** **Google AI Studio (`ai-studio`)** automatically follows official stable backend releases and supports **`gemini-4-hydrogen`** (including the `xhigh` thinking tier), **`gemini-4-carbon`** (requires an eligible account tier such as Google AI Ultra), and **`gemini-4-argon`**. **Gemini Web (`gemini-web`)** is backed by [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0), which natively supports dedicated `gemini-4-carbon` / `gemini-4-hydrogen` model IDs (including `-thinking` variants) and mutually recognizes slot upgrades/downgrades under `strict_model`; signed-in `gemini-4-argon` still has a known hang issue in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53), so `ai-studio` is recommended.
 
+## Fork Notice & Acknowledgements
+
+This project is an actively maintained **fork of [BUKOWSKIREAL/magpie-gemini-web](https://github.com/BUKOWSKIREAL/magpie-gemini-web)**, released under the original MIT license ([LICENSE](LICENSE)). Thanks to the original author [@bukowskiiiiii](https://github.com/bukowskiiiiii) and the upstream backend/ecosystem authors:
+
+- Gemini Web backend: [zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go) (the pinned official prebuilt source of this repo, see [LICENSE-UPSTREAM](LICENSE-UPSTREAM))
+- AI Studio backend: [Mag1cFall/AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)
+- Host gateway: [Magpie](https://usemagpie.ai/)
+
+**Key differences from upstream** (full history in [CHANGELOG](CHANGELOG.md)):
+
+1. npm package renamed to the scoped **`@dorokuma/magpie-gemini-web`**; the original unscoped `magpie-gemini-web` remains maintained by the upstream author as an independent npm package.
+2. The Gemini Web backend is pinned to the **official Release prebuilt binaries** of `dorokuma/gemini-web2api-go` (currently `v5.0.0`, SHA-256 synced one-way by script); the local patch-and-rebuild pipeline was retired.
+3. Gemini Web adds `gemini-4-carbon` / `gemini-4-hydrogen` model IDs with slot cross-validation; fixes include phantom session cleanup, AI Studio proxy precedence, and atomic publish/self-healing for update locks.
+4. Release process: strict `vX.Y.Z` tags + `make release-check` gate; CI runs `make check`, backend pin online verification, and 6-platform smoke tests.
+
+
 ## Which Provider Should I Choose?
 
 The plugin provides two independent providers that can be used individually or together:
