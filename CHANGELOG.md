@@ -2,6 +2,14 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## 0.15.2
+
+### 文档
+- README（中英）增补 Fork 声明与致谢章节：注明 fork 自 `BUKOWSKIREAL/magpie-gemini-web` 的上游归属、MIT 许可继承与与原版的主要差异。
+
+### CI
+- 发版链路迁移 npm **Trusted Publishing (OIDC)**：`pack-and-upload` 作业显式升级 npm（OIDC 要求 ≥ 11.5.1）；npm 首包发布经由作用域包 + token staging 引导完成（npm 侧历史占位 `0.0.0-stage` 为 staged-publishing 机制产物）。
+
 ## 0.15.1
 
 ### 修复
@@ -10,7 +18,6 @@
 
 ### 文档
 - `AGENTS.md` 铁律补入无作用域旧包 `magpie-gemini-web` 迁移期双包名卸载清理红线。
-- README（中英）增补 Fork 声明与致谢章节：注明上游归属、许可继承与与原版的主要差异。
 
 ## 0.15.0
 
