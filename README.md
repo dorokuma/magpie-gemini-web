@@ -8,6 +8,22 @@
 
 > **新模型支持说明**：**Google AI Studio (`ai-studio`)** 默认自动跟随官方最新稳定版后端，现已直接支持 **`gemini-4-hydrogen`**（含 `xhigh` 思考档位）、**`gemini-4-carbon`**（需账号具备对应权益，如 Google AI Ultra）与 **`gemini-4-argon`**。**Gemini Web (`gemini-web`)** 由后端 [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) 原生支持 `gemini-4-carbon` / `gemini-4-hydrogen` 专用模型 ID（含 `-thinking` 思考变体），`strict_model` 开启时也能正确互认槽位升降级；登录态 `gemini-4-argon` 仍存在生成挂起已知问题 [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53)，建议优先使用 `ai-studio`。
 
+## Fork 声明与致谢
+
+本项目是 **[BUKOWSKIREAL/magpie-gemini-web](https://github.com/BUKOWSKIREAL/magpie-gemini-web)** 的活跃分支，基于原版 MIT 许可开源（[LICENSE](LICENSE)）。感谢原作者 [@bukowskiiiiii](https://github.com/bukowskiiiiii)，以及上游后端与生态作者：
+
+- Gemini Web 后端：[zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go)（本仓 pin 的官方预编译来源，许可见 [LICENSE-UPSTREAM](LICENSE-UPSTREAM)）
+- AI Studio 后端：[Mag1cFall/AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)
+- 宿主网关：[Magpie](https://usemagpie.ai/)
+
+**与原版的主要差异**（完整历史见 [CHANGELOG](CHANGELOG.md)）：
+
+1. npm 包名迁移为作用域包 **`@dorokuma/magpie-gemini-web`**；原版无作用域包 `magpie-gemini-web` 仍由原作者维护，两者在 npm 上是相互独立的包。
+2. Gemini Web 后端固定使用 `dorokuma/gemini-web2api-go` 的**官方 Release 预编译二进制**（当前 `v5.0.0`，SHA-256 由脚本单向同步、禁止手改），移除本地补丁重编流水线。
+3. Gemini Web 新增 `gemini-4-carbon` / `gemini-4-hydrogen` 模型 ID 与互认槽位校验；修复幻影会话、AI Studio 代理优先级、更新锁原子发布与自愈等问题。
+4. 发版流程：tag 严格 `vX.Y.Z` + `make release-check` 门禁，CI 跑 `make check`、后端 pin 联网校验与 6 平台冒烟。
+
+
 ## 怎么选？
 
 插件提供两个互相独立的 Provider，可按使用场景选择（也可同时配置）：
