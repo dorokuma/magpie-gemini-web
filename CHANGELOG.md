@@ -2,6 +2,15 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## [Unreleased]
+
+### 修复
+- AI Studio 代理优先级收口：插件配置 `studio.proxy`（及传入 `options.proxy` 的 `install` / `prepare-browser` `--proxy`）显式设为空串 `""` 时在服务运行态与安装/自动更新下载态一致地跳过 `AI_STUDIO_PROXY` 与管理页 `.env`/`config.json` 保存的代理（运行态注入 `PROXY=""`；macOS/Windows 上后端自身的系统代理自动检测仍可能生效；CLI `start --proxy ""` 保持清空 `.env` 保存值的既有语义），未设置（缺省 `undefined`）时仍按原顺序回退。
+- 自动更新锁原子发布与自愈：维护门与使用租约改为写满 .pending-record.*.tmp 后经 renameSync 原子发布，消除活写者暴露半截锁文件的竞态窗口；同时对历史/极端断电遗留超过 10 秒宽限窗的 0 字节/损坏锁及孤儿暂存文件自动清理（二次读取发现内容已变更时保持占用语义），不再永久自锁。
+
+### 文档
+- `AGENTS.md` 铁律补入无作用域旧包 `magpie-gemini-web` 迁移期双包名卸载清理红线。
+
 ## 0.15.0
 
 ### 变更
