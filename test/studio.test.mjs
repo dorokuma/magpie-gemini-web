@@ -7,7 +7,7 @@ import path from 'node:path';
 import { GeminiWebPlugin, AIStudioPlugin } from '../index.mjs';
 import { studioSettings, listStudioModels, orderAccounts, cooldownWindows, accountGroupEmail, poolUsage, accountUsage, accountQuestion, signInProgress, STUDIO_ID, STUDIO_BASE } from '../lib/studio.mjs';
 import { forward, settings, UNREACHABLE_HEADER } from '../lib/backend.mjs';
-import { serviceEnv, saveStudioProxy, studioLogin, localStudio, computeFileHash, ensureStudio } from '../lib/studio-native.mjs';
+import { serviceEnv, saveStudioProxy, studioLogin, localStudio, computeFileHash, ensureStudio, downloadProxy } from '../lib/studio-native.mjs';
 import { STUDIO_VERSION, PINNED_ARCHIVES, CAMOUFOX_VERSION } from './helpers/studio-legacy.mjs';
 
 describe('AI Studio Plugin & Models Unit Tests', () => {
@@ -185,8 +185,14 @@ describe('AI Studio Plugin & Models Unit Tests', () => {
     try {
       delete process.env.AI_STUDIO_PROXY;
       assert.equal('PROXY' in serviceEnv(tempStudioDataDir, sampleConfig), false, 'Without studio.proxy the service takes the PROXY saved in .env');
-      assert.equal('PROXY' in serviceEnv(tempStudioDataDir, sampleConfig, { proxy: '' }), false, 'An empty studio.proxy names none');
+      assert.equal(serviceEnv(tempStudioDataDir, sampleConfig, { proxy: '' }).PROXY, '', 'an explicit empty studio.proxy overrides AI_STUDIO_PROXY and saved .env proxy with PROXY=""');
       assert.equal(serviceEnv(tempStudioDataDir, sampleConfig, { proxy: 'http://127.0.0.1:1082' }).PROXY, 'http://127.0.0.1:1082');
+      // The download path reads the same explicit-empty-as-off contract; no studio.proxy at all still falls through
+      assert.equal(downloadProxy(tempStudioDataDir, '', sampleConfig), '', 'an explicit empty studio.proxy turns the download proxy off too');
+      process.env.AI_STUDIO_PROXY = 'http://127.0.0.1:7891';
+      assert.equal(downloadProxy(tempStudioDataDir, undefined, sampleConfig), 'http://127.0.0.1:7891', 'no studio.proxy falls through to AI_STUDIO_PROXY');
+      assert.equal(serviceEnv(tempStudioDataDir, sampleConfig, { proxy: '' }).PROXY, '', 'an explicit empty studio.proxy overrides AI_STUDIO_PROXY and saved .env proxy with PROXY=""');
+      assert.equal(downloadProxy(tempStudioDataDir, '', sampleConfig), '', 'an explicit empty studio.proxy overrides AI_STUDIO_PROXY and savedConfig on the download path too');
     } finally {
       if (savedEnv === undefined) delete process.env.AI_STUDIO_PROXY;
       else process.env.AI_STUDIO_PROXY = savedEnv;

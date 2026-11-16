@@ -219,6 +219,55 @@ describe('Automatic official backend updates', () => {
     } finally { fs.readFileSync = read; }
   });
 
+  it('a fresh corrupt lock still blocks, while a stale one heals itself', async t => {
+    const f = fixture(t);
+    const gate = path.join(f.dataDir, '.automatic-update.crash.lock');
+    fs.writeFileSync(gate, '');
+    await assert.rejects(acquireStudioUse({ dataDir: f.dataDir, timeoutMs: 30 }), /finishing an automatic update/);
+    assert.ok(fs.existsSync(gate), 'a lock in its write window must survive');
+    const stale = new Date(Date.now() - 20000);
+    fs.utimesSync(gate, stale, stale);
+    const orphan = path.join(f.dataDir, '.pending-record.999.stale.tmp');
+    const fresh = path.join(f.dataDir, '.pending-record.999.fresh.tmp');
+    fs.writeFileSync(orphan, '{}');
+    fs.writeFileSync(fresh, '{}');
+    fs.utimesSync(orphan, stale, stale);
+    (await acquireStudioUse({ dataDir: f.dataDir, timeoutMs: 1000 }))();
+    assert.equal(fs.existsSync(gate), false, 'a corrupt lock past the grace window is removed');
+    assert.equal(fs.existsSync(orphan), false, 'a stale orphaned staging file is swept');
+    assert.equal(fs.existsSync(fresh), true, 'a fresh staging file neither blocks nor is swept');
+  });
+
+  it('keeps a corrupt lock whose reread sees a slow writer finishing its record', async t => {
+    const f = fixture(t);
+    const resumed = path.join(f.dataDir, '.automatic-update.resumed.lock');
+    fs.writeFileSync(resumed, '');
+    const stale = new Date(Date.now() - 20000);
+    fs.utimesSync(resumed, stale, stale);
+    const read = fs.readFileSync;
+    const write = fs.writeFileSync;
+    let reads = 0;
+    let useWrites = 0;
+    fs.readFileSync = function(file, ...args) {
+      const contents = read.call(this, file, ...args);
+      if (file === resumed && ++reads === 2) {
+        fs.writeFileSync(resumed, JSON.stringify({ pid: process.pid, token: 'live' }));
+        return read.call(this, file, ...args);
+      }
+      return contents;
+    };
+    fs.writeFileSync = function(file, ...args) {
+      const base = path.basename(String(file));
+      if (base.startsWith('.pending-record.') || base.includes('.studio-use.')) ++useWrites;
+      return write.call(this, file, ...args);
+    };
+    try {
+      await assert.rejects(acquireStudioUse({ dataDir: f.dataDir, timeoutMs: 30 }), /finishing an automatic update/);
+      assert.ok(fs.existsSync(resumed), 'a reread seeing new content keeps the gate, not delete or pass');
+      assert.equal(useWrites, 0, 'first gate check must stay occupied without transiently writing a lease record');
+    } finally { fs.readFileSync = read; fs.writeFileSync = write; }
+  });
+
   it('respects another host in a different timezone and removes its abandoned leases', { timeout: 30000 }, async t => {
     const f = fixture(t);
     f.status.version = 'v0.3.7';

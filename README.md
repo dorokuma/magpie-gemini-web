@@ -144,7 +144,7 @@ magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"proxy":"http://12
 | `proxy` | 无 | 仅 `gemini-web` | 一键配置后端访问 Google 的代理（`http` / `https` / `socks5` / `socks5h`），也可用环境变量 `GEMINI_WEB_PROXY` 或在登录第一步填写 |
 | `baseURL` | `http://127.0.0.1:8083/v1` | 仅 `gemini-web` | Gemini Web 默认后端地址 |
 | `contextLimit` / `outputLimit` | `1000000` / `8192` | 仅 `gemini-web` | 向客户端声明的上下文 / 输出上限 |
-| `studio.proxy` | 无 | 仅 `ai-studio` | 访问 Google 的代理（`http` / `https` / `socks5`），也可用环境变量 `AI_STUDIO_PROXY`；设置后优先于管理页里保存的代理，留空等于不设置 |
+| `studio.proxy` | 无 | 仅 `ai-studio` | 访问 Google 的代理（`http` / `https` / `socks5`），也可用环境变量 `AI_STUDIO_PROXY`；设置后优先于管理页里保存的代理。未设置时沿用环境变量或管理页保存的代理；显式设为空字符串 `""` 时不使用环境变量与管理页里保存的代理（macOS/Windows 上后端自身的系统代理检测仍可能生效） |
 | `studio.accountOrder` | 无 | 仅 `ai-studio` | 账号优先顺序（逗号分隔字符串或字符串数组，如 `["b@gmail.com","a@gmail.com"]`）；当 `.env` 中未保存或为空时作为初始值写入，管理页保存非空值后优先保留管理页设置 |
 | `studio.modelAccounts` | 无 | 仅 `ai-studio` | 模型专属账号绑定（`"model:acc1|acc2"` 字符串或 `{ "gemini-3.1-pro-preview": ["acc1", "acc2"] }` 对象）；当 `.env` 中未保存或为空时作为初始值写入，管理页保存非空值后优先保留管理页设置 |
 | `studio.baseURL` | `http://127.0.0.1:2048/v1` | 仅 `ai-studio` | 连接已有 AIStudio2API 时的默认地址 |
