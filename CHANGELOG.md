@@ -2,7 +2,7 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
-## [Unreleased]
+## 0.15.1
 
 ### 修复
 - AI Studio 代理优先级收口：插件配置 `studio.proxy`（及传入 `options.proxy` 的 `install` / `prepare-browser` `--proxy`）显式设为空串 `""` 时在服务运行态与安装/自动更新下载态一致地跳过 `AI_STUDIO_PROXY` 与管理页 `.env`/`config.json` 保存的代理（运行态注入 `PROXY=""`；macOS/Windows 上后端自身的系统代理自动检测仍可能生效；CLI `start --proxy ""` 保持清空 `.env` 保存值的既有语义），未设置（缺省 `undefined`）时仍按原顺序回退。
