@@ -2,7 +2,10 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
-## [Unreleased]
+## 0.18.0 - 2026-11-19
+
+### 变更
+- Gemini Web 后端 pin 升级至 **`dorokuma/gemini-web2api-go` `v6.2.0`** 官方预编译二进制：**`gemini-4-carbon` 对话模式与任务模式拆分**——`gemini-4-carbon` / `gemini-4-carbon-thinking` / `gemini-4-carbon-thinking-medium` 改为纯对话模式（三档各自准确自报），新增独立任务模式模型 `gemini-4-carbon-task`，三大家族（Neon / Carbon / Hydrogen）均提供独立 `-task` 模型（对应 Gemini Web 网页端「任务」开关）。
 
 ### 修复
 - AI Studio 插件兼容 `AIStudio2API` `v0.3.x` 的 `interactions_api` 能力键名：上游自 `v0.3.12` 起将 Deep Research 模型的能力标记由 `interaction_route` 更名为 `interactions_api`，恢复 `deep-research-*` 模型在新版后端 `/v1/models` 下的展示，同时保留旧 `interaction_route` 键的兼容。
