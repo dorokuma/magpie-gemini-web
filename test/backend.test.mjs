@@ -91,6 +91,22 @@ describe('3. Invalid options validation', () => {
     assert.equal(s.proxy, '');
     assert.equal(settings({ stripCitations: false }).stripCitations, false);
     assert.equal(settings({ proxy: ' http://127.0.0.1:7890 ' }).proxy, 'http://127.0.0.1:7890');
+    assert.deepEqual(s.rateLimit, {});
+  });
+
+  it('validates per-IP rate limits against the backend bounds, 0 meaning unlimited', () => {
+    assert.deepEqual(settings({ per_ip_concurrent: 0, per_ip_rpm: 10000, per_ip_rph: 100000 }).rateLimit,
+      { per_ip_concurrent: 0, per_ip_rpm: 10000, per_ip_rph: 100000 });
+    assert.deepEqual(settings({ per_ip_concurrent: 5 }).rateLimit, { per_ip_concurrent: 5 });
+    for (const bad of [-1, 1.5, 1001, '5', true, NaN]) {
+      assert.throws(() => settings({ per_ip_concurrent: bad }), /per_ip_concurrent: must be an integer between 0 and 1000/);
+    }
+    for (const bad of [-1, 0.5, 10001, '30', false]) {
+      assert.throws(() => settings({ per_ip_rpm: bad }), /per_ip_rpm: must be an integer between 0 and 10000/);
+    }
+    for (const bad of [-1, 2.5, 100001, '80', null]) {
+      assert.throws(() => settings({ per_ip_rph: bad }), /per_ip_rph: must be an integer between 0 and 100000/);
+    }
   });
 
   it('rejects unknown options to catch typos', () => {
@@ -1081,5 +1097,16 @@ describe('23. Plugin metadata for Magpie', () => {
     const studio = await AIStudioPlugin();
     assert.equal(web.auth.maxConcurrency, 2);
     assert.equal(studio.auth.maxConcurrency, 1);
+  });
+
+  it('declares per-IP rate limit defaults in the Magpie options area', async () => {
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    assert.equal(pkg.magpie?.maxConcurrency, 2);
+    assert.equal(pkg.magpie?.icon, PLUGIN_ICON);
+    assert.deepEqual(pkg.magpie?.options, {
+      per_ip_concurrent: 5,
+      per_ip_rpm: 30,
+      per_ip_rph: 80
+    });
   });
 });

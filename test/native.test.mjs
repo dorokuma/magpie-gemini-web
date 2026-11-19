@@ -11,6 +11,7 @@ import {
   statusBackend,
   stopBackend,
   cleanBackend,
+  ensureBackend,
   hasBackendAssets,
   computeFileHash,
   getDataDir
@@ -262,6 +263,184 @@ describe('23. Native helper config/secrets creation reuse modes 600 without valu
       console.log = origLog;
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('24. per-IP rate limits merge into config.json without disturbing other fields', () => {
+  it('writes passed per_ip_* values into a fresh config.json', async () => {
+    const dataDir = makeTempDir();
+    const validContent = Buffer.from('fake backend');
+    const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
+    await installBackend({
+      dataDir,
+      platform: 'darwin',
+      arch: 'arm64',
+      expectedHash: validHash,
+      fetchFn: async () => new Response(validContent),
+      rateLimit: { per_ip_concurrent: 8, per_ip_rpm: 120, per_ip_rph: 0 }
+    });
+    const config = JSON.parse(fs.readFileSync(path.join(dataDir, 'config.json'), 'utf8'));
+    assert.equal(config.per_ip_concurrent, 8);
+    assert.equal(config.per_ip_rpm, 120);
+    assert.equal(config.per_ip_rph, 0);
+    assert.equal(config.port, 8083);
+    assert.equal(fs.statSync(path.join(dataDir, 'config.json')).mode & 0o777, 0o600);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('merges only changed per_ip_* keys into an existing config.json and leaves it alone when nothing differs', async () => {
+    const dataDir = makeTempDir();
+    const validContent = Buffer.from('fake backend');
+    const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
+    const configPath = path.join(dataDir, 'config.json');
+    const original = { host: '127.0.0.1', port: 9876, multi_turn: true, custom_field: 'keep me', per_ip_rpm: 30 };
+    fs.writeFileSync(configPath, JSON.stringify(original), { mode: 0o644 });
+    const fetchFn = async () => new Response(validContent);
+
+    // A differing value is merged; every other field survives.
+    await installBackend({
+      dataDir,
+      platform: 'darwin',
+      arch: 'arm64',
+      expectedHash: validHash,
+      fetchFn,
+      rateLimit: { per_ip_rpm: 120 }
+    });
+    const merged = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.equal(merged.per_ip_rpm, 120);
+    assert.equal(merged.per_ip_concurrent, undefined, 'unpassed limits are not forced in');
+    assert.equal(merged.port, 9876);
+    assert.equal(merged.multi_turn, true);
+    assert.equal(merged.custom_field, 'keep me');
+    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+
+    // Same values again: no rewrite.
+    let before = fs.statSync(configPath).mtimeMs;
+    await installBackend({ dataDir, platform: 'darwin', arch: 'arm64', expectedHash: validHash, fetchFn, rateLimit: { per_ip_rpm: 120 } });
+    assert.equal(fs.statSync(configPath).mtimeMs, before);
+
+    // No rateLimit at all: no rewrite either.
+    before = fs.statSync(configPath).mtimeMs;
+    await installBackend({ dataDir, platform: 'darwin', arch: 'arm64', expectedHash: validHash, fetchFn });
+    assert.equal(fs.statSync(configPath).mtimeMs, before);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('hot-applies differing limits to a running managed backend and skips the PUT when they already match', async () => {
+    const dataDir = makeTempDir();
+    const binDir = path.join(dataDir, 'bin');
+    fs.mkdirSync(binDir);
+    const validContent = Buffer.from('fake backend');
+    const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
+    fs.writeFileSync(path.join(binDir, 'gemini-web2api-go'), validContent, { mode: 0o700 });
+    fs.writeFileSync(path.join(dataDir, 'argon-build.json'), JSON.stringify({ sha256: validHash, version: 'v0.0.0-test' }));
+    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: 8083, multi_turn: true, per_ip_rpm: 30 }));
+    fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_test', adminToken: 'admin_test' }));
+
+    const adminCalls = [];
+    const runtimeConfig = {
+      retry_attempts: 3,
+      request_timeout_sec: 600,
+      default_model: 'gemini-4-hydrogen',
+      impersonate: 'chrome',
+      gemini_bl: 'boq_123',
+      per_ip_concurrent: 5,
+      per_ip_rpm: 30,
+      per_ip_rph: 80
+    };
+    const fetchFn = async (url, init = {}) => {
+      const target = String(url);
+      if (target === 'http://127.0.0.1:8083/') {
+        return Response.json({ version: 'v0.0.0-test', models: [] });
+      }
+      if (target === 'http://127.0.0.1:8083/v1/models') {
+        assert.equal(init.headers?.Authorization, 'Bearer gw_test');
+        return Response.json({ data: [] });
+      }
+      if (target === 'http://127.0.0.1:8083/admin/api/config') {
+        assert.equal(init.headers?.Authorization, 'Bearer admin_test');
+        adminCalls.push(init.method || 'GET');
+        if ((init.method || 'GET') === 'PUT') {
+          const sent = JSON.parse(init.body);
+          assert.equal(sent.retry_attempts, 3, 'PUT must carry the full runtime config back');
+          assert.equal(sent.impersonate, 'chrome');
+          Object.assign(runtimeConfig, sent);
+          return Response.json({ ok: true, config: runtimeConfig });
+        }
+        return Response.json({ config: { ...runtimeConfig }, models: [], deploy: {} });
+      }
+      throw new Error(`unexpected URL ${target}`);
+    };
+
+    const spawned = [];
+    const opts = {
+      dataDir,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchFn,
+      spawnFn: () => { spawned.push(1); return { pid: 4242, on() {}, unref() {} }; },
+      verifyIdentity: () => false
+    };
+
+    // Differing values: one GET + one PUT, backend keeps running untouched.
+    const setup = await ensureBackend({ ...opts, rateLimit: { per_ip_rpm: 120, per_ip_rph: 200 } });
+    assert.equal(setup.baseURL, 'http://127.0.0.1:8083/v1');
+    assert.deepEqual(adminCalls, ['GET', 'PUT']);
+    assert.equal(runtimeConfig.per_ip_rpm, 120);
+    assert.equal(runtimeConfig.per_ip_rph, 200);
+    assert.equal(runtimeConfig.per_ip_concurrent, 5);
+    assert.equal(spawned.length, 0, 'an already-healthy backend is reused, not restarted');
+
+    // The hot apply also persists the passed limits into the on-disk config.json,
+    // merging key by key while port, multi_turn and every other field stay put.
+    const configPath = path.join(dataDir, 'config.json');
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.equal(onDisk.per_ip_rpm, 120);
+    assert.equal(onDisk.per_ip_rph, 200);
+    assert.equal(onDisk.per_ip_concurrent, undefined, 'limits not passed are not forced onto disk');
+    assert.equal(onDisk.port, 8083);
+    assert.equal(onDisk.multi_turn, true);
+    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+
+    // Values now in sync: a GET happens but no second PUT.
+    adminCalls.length = 0;
+    await ensureBackend({ ...opts, rateLimit: { per_ip_rpm: 120, per_ip_rph: 200 } });
+    assert.deepEqual(adminCalls, ['GET']);
+
+    // No rateLimit: the admin API is never touched.
+    adminCalls.length = 0;
+    await ensureBackend(opts);
+    assert.deepEqual(adminCalls, []);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('fails loudly when the managed backend cannot apply the limits', async () => {
+    const dataDir = makeTempDir();
+    const binDir = path.join(dataDir, 'bin');
+    fs.mkdirSync(binDir);
+    const validContent = Buffer.from('fake backend');
+    const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
+    fs.writeFileSync(path.join(binDir, 'gemini-web2api-go'), validContent, { mode: 0o700 });
+    fs.writeFileSync(path.join(dataDir, 'argon-build.json'), JSON.stringify({ sha256: validHash, version: 'v0.0.0-test' }));
+    const configPath = path.join(dataDir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify({ host: '127.0.0.1', port: 8083, per_ip_rpm: 30 }));
+    fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_test', adminToken: 'admin_test' }));
+    const configBefore = fs.readFileSync(configPath, 'utf8');
+
+    const fetchFn = async (url) => {
+      const target = String(url);
+      if (target === 'http://127.0.0.1:8083/') return Response.json({ version: 'v0.0.0-test', models: [] });
+      if (target === 'http://127.0.0.1:8083/v1/models') return Response.json({ data: [] });
+      if (target === 'http://127.0.0.1:8083/admin/api/config') return new Response('forbidden', { status: 403 });
+      throw new Error(`unexpected URL ${target}`);
+    };
+    await assert.rejects(
+      ensureBackend({ dataDir, platform: 'darwin', arch: 'arm64', fetchFn, verifyIdentity: () => false, rateLimit: { per_ip_rpm: 120 } }),
+      /Cannot apply per-IP rate limits.*HTTP 403/
+    );
+    // A failed hot apply must not touch the on-disk config.json.
+    assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });
 
