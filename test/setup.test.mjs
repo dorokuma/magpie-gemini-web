@@ -157,6 +157,42 @@ describe('25. Cookie import through the admin API', () => {
     await assert.rejects(importCookie(setup, SIGNED_IN, { fetchFn: refused }), /无法确认本地 Gemini Web 后端的登录能力.*fetch failed/);
   });
 
+  // A cancel that lands while the account exists but before it is verified removes exactly
+  // that account: the session is over and nobody will sign in to it.
+  it('rolls back the just-created account when isEnded flips before the check runs', async () => {
+    const calls = [];
+    const ended = [];
+    const r = importCookie(setup, SIGNED_IN, {
+      isEnded: () => ended.length > 0,
+      fetchFn: adminFetch(() => {
+        ended.push(true); // the check starting is the last moment the account could be verified
+        return Response.json({ ok: true, detail: 'fine' });
+      }, calls)
+    });
+    await assert.rejects(r, /登录已取消/);
+    assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).filter(s => s.startsWith('DELETE')),
+      ['DELETE /admin/api/cookies/7']);
+    assert.equal(calls.at(-1).method, 'DELETE');
+  });
+
+  it('rolls back the account when isEnded flips after the check resolves', async () => {
+    const calls = [];
+    const ended = [];
+    let checked = false;
+    const r = importCookie(setup, SIGNED_IN, {
+      isEnded: () => ended.length > 0,
+      fetchFn: adminFetch(() => {
+        checked = true;
+        return Promise.resolve(Response.json({ ok: true, detail: 'fine' }))
+          .then(v => { ended.push(true); return v; }); // cancel lands while the check resolves
+      }, calls)
+    });
+    await assert.rejects(r, /登录已取消/);
+    assert.equal(checked, true);
+    assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).filter(s => s.startsWith('DELETE')),
+      ['DELETE /admin/api/cookies/7']);
+  });
+
   it('validates proxy URLs and configures the backend proxy pool before checking a cookie', async () => {
     assert.equal(validateProxyURL(''), '');
     assert.equal(validateProxyURL('  http://127.0.0.1:7890 '), 'http://127.0.0.1:7890');
@@ -402,6 +438,9 @@ describe('27. One-click sign-in through the plugin', () => {
   let previousDataDir;
   const accounts = new Map();
   let nextId = 1;
+  // A test can hold the backend's /check answer open to stage a cancel mid-import.
+  let checkGate = null;
+  let checkEntered = false;
   // The backend's database, which the plugin reads the pool from: the fake backend keeps its
   // accounts there too.
   let db;
@@ -458,14 +497,21 @@ describe('27. One-click sign-in through the plugin', () => {
         }
         const m = req.url.match(/^\/admin\/api\/cookies\/(\d+)(\/check)?$/);
         if (m && req.method === 'POST' && m[2]) {
-          const entry = accounts.get(Number(m[1]));
-          const cookie = entry?.cookie || '';
-          if (entry) {
-            const row = db.prepare('SELECT proxy_id, authuser FROM accounts WHERE id = ?').get(Number(m[1]));
-            entry.checkedProxyId = row?.proxy_id ?? 0;
-            entry.checkedAuthuser = row?.authuser ?? 0;
+          const answer = () => {
+            const entry = accounts.get(Number(m[1]));
+            const cookie = entry?.cookie || '';
+            if (entry) {
+              const row = db.prepare('SELECT proxy_id, authuser FROM accounts WHERE id = ?').get(Number(m[1]));
+              entry.checkedProxyId = row?.proxy_id ?? 0;
+              entry.checkedAuthuser = row?.authuser ?? 0;
+            }
+            return send(200, cookie.includes('SID=good') ? { ok: true, detail: 'ok' } : { ok: false, detail: 'not signed in' });
+          };
+          if (checkGate) {
+            checkEntered = true;
+            return checkGate.then(answer);
           }
-          return send(200, cookie.includes('SID=good') ? { ok: true, detail: 'ok' } : { ok: false, detail: 'not signed in' });
+          return answer();
         }
         if (m && req.method === 'DELETE') {
           accounts.delete(Number(m[1]));
@@ -554,6 +600,37 @@ describe('27. One-click sign-in through the plugin', () => {
     } finally {
       backendCapabilities = LOGIN_CAPABILITIES;
       await post(pending.url, '/cancel');
+    }
+  });
+
+  // A cancel that lands while the backend is still checking the cookie must delete the
+  // account the import just created: the wizard is over and nobody signs in to it. Runs
+  // before any account lands in the pool so the rollback leaves it empty.
+  it('rolls back the just-created account when cancel lands during the backend check', { timeout: 10000 }, async () => {
+    const before = nextId;
+    let release;
+    checkGate = new Promise(resolve => { release = resolve; });
+    checkEntered = false;
+    const pending = await (await oauthMethod()).authorize();
+    try {
+      const waiting = pending.callback();
+      const submission = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      // Wait until the import is parked inside the backend's /check, then cancel.
+      while (!checkEntered) await new Promise(resolve => setImmediate(resolve));
+      assert.equal((await post(pending.url, '/cancel')).status, 204);
+      release();
+      const r = await submission;
+      assert.equal(r.status, 410);
+      const outcome = await waiting;
+      assert.equal(outcome.type, 'failed');
+      assert.match(outcome.error, /取消/);
+      // The account that the import created was deleted again; nothing else was touched.
+      assert.equal(nextId, before + 1, 'the account was created, then rolled back');
+      assert.equal(accounts.size, 0);
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
+    } finally {
+      checkGate = null;
+      release();
     }
   });
 
@@ -690,11 +767,11 @@ describe('27. One-click sign-in through the plugin', () => {
     }
   });
 
-  it('retries ensureBackend after a failed first attempt instead of reusing its rejection', { timeout: 15000 }, async () => {
+  it('retries ensureBackend after a failed attempt instead of reusing its rejection, across generations', { timeout: 30000 }, async () => {
     // No binary yet: authorize's first ensureBackend (no proxy) fails on a 503 download. A
     // submit that re-used that dead promise could never succeed; it must run ensureBackend
-    // again — and once a trusted binary exists (as if the proxied download had landed), the
-    // in-place retry starts it and signs in.
+    // again — and the same must hold for the retry's own failure: a second 503 generation
+    // must not lock the session into its rejection either.
     // Port 9 (discard) answers nothing, so the first ensureBackend cannot adopt a running
     // backend; its download is held until the test lets it fail with a 503.
     const fresh = makeDataDir({ binary: null, port: 9 });
@@ -721,10 +798,22 @@ describe('27. One-click sign-in through the plugin', () => {
       assert.match(first.body.error, /HTTP 503/);
       downloads.length = 0;
 
+      // First rebuild: the failed generation made submit call ensureBackend again; with no
+      // binary yet its own install runs too. Submitting a proxy takes the install down the
+      // curl path, so the attempt dies on the unreachable proxy — and its error names the
+      // proxy, proving a fresh ensureBackend ran rather than the dead promise being reused.
+      // The second failed generation must be tracked just like the first, not left to
+      // poison every later retry.
+      const second = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-retry'), proxy: 'http://127.0.0.1:10809'
+      });
+      assert.equal(second.status, 400);
+      assert.match(second.body.error, /curl.*127\.0\.0\.1.*10809|Failed to download/, 'the rebuilt ensureBackend ran its own install');
+
       // A trusted binary now on disk and the config aimed at the fake backend (what a
-      // successful proxied download plus start would have produced): the same in-place retry
-      // must adopt it and finish the sign-in — proof that submit re-ran ensureBackend instead
-      // of awaiting the dead first promise.
+      // successful download plus start would have produced): a third submit with the same
+      // proxy must rebuild ensureBackend once more, adopt the running backend, and sign
+      // in — proof the second generation's failure did not poison the retry state.
       fs.writeFileSync(path.join(fresh, 'bin', 'gemini-web2api-go'), 'fake backend', { mode: 0o700 });
       trustBinary(fresh);
       fs.writeFileSync(path.join(fresh, 'config.json'),
@@ -732,14 +821,16 @@ describe('27. One-click sign-in through the plugin', () => {
       globalThis.fetch = (url, init) => String(url).startsWith('http://127.0.0.1:')
         ? realFetch(url, init)
         : Promise.resolve(new Response('', { status: 503 }));
-      const second = await post(pending.url, '/submit', {
+      const third = await post(pending.url, '/submit', {
         cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-retry'), proxy: 'http://127.0.0.1:10809'
       });
-      assert.equal(second.status, 200, second.body?.error || JSON.stringify(second.body));
+      assert.equal(third.status, 200, third.body?.error || JSON.stringify(third.body));
       const result = await pending.callback();
       assert.equal(result.type, 'success');
-      const acctId = result.metadata.account;
-      assert.equal(accounts.get(acctId).checkedProxyId > 0, true, 'the account was bound to the wizard-submitted proxy');
+      assert.ok(accounts.has(result.metadata.account), 'the cookie was imported into the pool');
+      assert.equal(accounts.get(result.metadata.account).checkedProxyId > 0, true,
+        'the account was bound to the wizard-submitted proxy');
+      assert.equal(downloads.length, 0, 'adopting the trusted binary never re-downloaded');
     } finally {
       globalThis.fetch = realFetch;
       process.env.GEMINI_WEB_DATA_DIR = dataDir;

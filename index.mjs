@@ -145,25 +145,35 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
           // ensureBackend with the proxy the form actually carries — a locked-in rejection
           // would make every in-place retry fail the same way forever.
           let initialProxy = proxy;
-          let ready = ensureBackend({ proxy: initialProxy });
+          let ready;
           let readyFailed = false;
-          ready.catch(() => { readyFailed = true; });
+          // Each (re)start is a generation of its own: the catch marks only the generation
+          // that still owns `ready`, so a rejection landing after a retry replaced it can
+          // never poison the new generation's clean slate.
+          const startReady = p => {
+            initialProxy = p;
+            readyFailed = false;
+            const attempt = ensureBackend({ proxy: p });
+            ready = attempt;
+            attempt.catch(() => { if (ready === attempt) readyFailed = true; });
+          };
+          startReady(proxy);
           const session = await startWebConnect({
             proxy,
             async submit({ cookie, authuser, proxy: formProxy, isEnded }) {
               if (readyFailed || (formProxy !== undefined && formProxy !== initialProxy)) {
-                const retryProxy = formProxy !== undefined ? formProxy : initialProxy;
-                ready = ensureBackend({ proxy: retryProxy });
-                ready.catch(() => {});
-                readyFailed = false;
-                initialProxy = retryProxy;
+                startReady(formProxy !== undefined ? formProxy : initialProxy);
               }
               const local = await ready;
               // The user may have cancelled or the session timed out while the backend was
               // starting; importing into it now would keep an account nobody signs in to.
               if (isEnded?.()) throw new Error('登录已结束，未导入 Cookie。');
               const bind = formProxy !== undefined ? formProxy : initialProxy;
-              const added = await importCookie(local, cookie, { authuser, ...(bind ? { proxy: bind } : {}) });
+              const added = await importCookie(local, cookie, {
+                authuser,
+                isEnded,
+                ...(bind ? { proxy: bind } : {})
+              });
               const account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
               const signIn = await signInFor(local, account || { id: added.id });
               return { signIn, email: signIn.metadata?.email || '' };

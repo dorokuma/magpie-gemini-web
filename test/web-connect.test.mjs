@@ -38,6 +38,9 @@ describe('web connect wizard', () => {
       const nonce = res.headers.get('content-security-policy').match(/nonce-([^']+)/)[1];
       assert.ok(html.includes(`<script nonce="${nonce}">`), 'page script carries the CSP nonce');
       new vm.Script(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1]);
+      assert.match(html, /<p id="manual">/, 'the manual-open link is visible before any button is clicked');
+      assert.doesNotMatch(html, /<p id="manual" hidden/, 'manual link does not start hidden');
+      assert.match(html, /done = true;\s*\n\s*submitBtn\.disabled = openBtn\.disabled = true;/, 'cancel locks the form out at once');
       assert.doesNotMatch(html, /https?:\/\/(?!127\.0\.0\.1)[^"'< ]*(cdn|js|css|fonts)/i, 'no external assets');
       assert.match(html, /value="http:\/\/127\.0\.0\.1:7890"/, 'proxy prefilled');
       assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
