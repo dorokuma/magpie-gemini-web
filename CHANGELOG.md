@@ -2,6 +2,11 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## [Unreleased]
+
+### 新增
+- 新增 `per_ip_concurrent` / `per_ip_rpm` / `per_ip_rph` 三个 Magpie 参数区选项（默认 `5` / `30` / `80`，与 gemini-web2api-go 后端默认一致，`0` 表示不限），用于配置本地受管后端的单 IP 限流，解决 `direct IP slot full: rph limit reached (429)`。选项在 `settings()` 中按后端 `validateRuntimeConfig` 范围校验（`0–1000` / `0–10000` / `0–100000`，须为整数）；新建 `config.json` 会写入这些字段，存量 `config.json` 仅在值变化时按键合并（`port`、`multi_turn` 等其它字段与 `0600` 权限原样保留），运行中的受管后端经 `GET` + `PUT /admin/api/config` 热生效且值已一致时跳过写入；连接自建外部后端时仅作校验，不触碰外部实例。
+
 ## 0.18.1 - 2026-11-19
 
 ### 变更

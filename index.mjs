@@ -71,7 +71,7 @@ async function forwardManaged(input, init, getAuth, opts) {
   }
   if (!managedBackend(c.baseURL, c.key)) return res;
   try {
-    await ensureBackend({ proxy: opts.proxy });
+    await ensureBackend({ proxy: opts.proxy, rateLimit: opts.rateLimit });
   } catch {
     return res;
   }
@@ -102,7 +102,7 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
   // Bring a backend set up earlier back after Magpie or the computer restarts. Not awaited:
   // requests that arrive first start it themselves through forwardManaged.
   if (localBackend()) {
-    ensureBackend({ proxy: opts.proxy })
+    ensureBackend({ proxy: opts.proxy, rateLimit: opts.rateLimit })
       .then(async local => {
         if (!opts.proxy) return;
         await requireLoginBackend(local);
@@ -153,7 +153,7 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
           const startReady = p => {
             initialProxy = p;
             readyFailed = false;
-            const attempt = ensureBackend({ proxy: p });
+            const attempt = ensureBackend({ proxy: p, rateLimit: opts.rateLimit });
             ready = attempt;
             attempt.catch(() => { if (ready === attempt) readyFailed = true; });
           };
@@ -309,7 +309,7 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
           return await listModels(c, opts);
         } catch (err) {
           if (!err.unreachable || !managedBackend(c.baseURL, c.key)) throw err;
-          await ensureBackend({ proxy: opts.proxy });
+          await ensureBackend({ proxy: opts.proxy, rateLimit: opts.rateLimit });
           return listModels(c, opts);
         }
       }
