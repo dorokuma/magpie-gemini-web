@@ -247,7 +247,7 @@ magpie plugin options @dorokuma/magpie-gemini-web '{"studio":{"proxy":"http://12
 **Gemini Web 优化后端升级与回退：**
 - [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53) 的多账号索引漏传已修复，需重新导入受影响的 Cookie 或在后端账号管理中修正索引。后端 [`dorokuma/gemini-web2api-go` `v6.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v6.0.0) 已原生收录 `gemini-4-carbon`、`gemini-4-hydrogen` 与 `gemini-4-neon` 模型 ID（含 `-thinking` 思考变体，Neon 系列为服务端内部思考、不输出 `reasoning_content`），同时移除了 Gemini Web 对外 `gemini-4-argon*`（原 Argon 槽位在上游目录中原位改名为 4 Carbon，请改用 `gemini-4-carbon*` 或 `gemini-4-neon*`；如需 Argon 请走 `ai-studio`）；`strict_model` 槽位校验按显示名家族互认升级/降级，付费账号请求 `gemini-3.8-flash` 被路由至 `4 Hydrogen` 时也能正确识别，不会误报 `429 model_downgraded`。
 - 插件默认固定使用后端仓发布的 [v6.0.0](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v6.0.0) 预编译二进制（一仓一制品，6 平台 SHA-256 pin 在 `lib/backend-release.json`，不再由插件仓打补丁重编）。对话请求按上游沉默计时：Google 让请求排队时每 60 秒发一次心跳，后端会一直等到出字；连续 `request_timeout_sec`（默认 180 秒）没有任何数据才放弃这一次并重试，还在出字的长回复也不会被截断。
-- **旧版升级**：插件不会打断运行中的后端。先停止旧进程（PID 见数据目录 `backend.pid`），下次启动 Magpie 或发请求时会自动更新二进制并保留原有配置与账号。
+- **旧版升级**：插件加载时若识别到托管的旧版后端进程，会自动回收并升级到当前 pin 的 `v6.0.0`，这可能中断正在进行的生成请求；建议升级前先等待在途请求结束，或手动停止旧进程（PID 见数据目录 `backend.pid`）。非插件托管或无法识别的实例不保证自动更新。升级后保留原有配置与账号。
 - **回退官方上游版 / 恢复 pin 版**（停止后端后在插件目录执行）：
   ```bash
   npm run backend:install:upstream  # 回退并固定使用上游 zexadev v4.28.0
