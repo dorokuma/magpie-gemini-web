@@ -2,7 +2,10 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
-## [Unreleased]
+## 0.18.1 - 2026-11-19
+
+### 变更
+- Gemini Web 后端 pin 升级至 **`dorokuma/gemini-web2api-go` `v6.2.1`** 官方预编译二进制：Chat 模式平台工具上限尾注前置免疫，减少工具调用被平台提示打断。
 
 ### 修复
 - Gemini Web 一键登录不再让 Magpie 直接用系统默认浏览器打开 gemini.google.com：`authorize` 改为打开本机登录向导页（`127.0.0.1` 随机端口 + 随机 token 路径），页内按钮以无痕 / 隐私模式启动检测到的浏览器（Firefox 优先，其次 Chrome / Brave / Chromium / Edge；找不到时给出可手动复制的链接），避免登录会话落在日常窗口被 Google 踢出。
