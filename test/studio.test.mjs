@@ -406,6 +406,29 @@ describe('AI Studio Plugin & Models Unit Tests', () => {
     }
   });
 
+  it('3c. Deep Research models are listed on either the old interaction_route or the new interactions_api flag', async () => {
+    // The fixture marks deep-research-* with both flags (v0.2.x); drop one at a time so
+    // each single-key shape fails on the pre-fix code that only read interaction_route.
+    const catalog = JSON.parse(fs.readFileSync(new URL('./fixtures/studio-catalog-v0.2.12.json', import.meta.url), 'utf8'));
+    const ids = ['deep-research-max-preview-04-2026', 'deep-research-preview-04-2026'];
+    const c = { baseURL: serverURL, key: 'test-key' };
+    try {
+      for (const drop of ['interaction_route', 'interactions_api']) {
+        const data = catalog.data.map(m => m.id.startsWith('deep-research-')
+          ? { ...m, capabilities: { ...m.capabilities, [drop]: undefined } } : m);
+        serverResponses['/v1/models'] = { status: 200, body: JSON.stringify({ ...catalog, data }) };
+        const models = await listStudioModels(c, studioSettings());
+        for (const id of ids) {
+          assert.ok(models[id], `${id} listed with only the other flag (no ${drop})`);
+          assert.equal(models[id].api.npm, '@ai-sdk/openai-compatible');
+          assert.equal(models[id].capabilities.reasoning, true);
+        }
+      }
+    } finally {
+      delete serverResponses['/v1/models'];
+    }
+  });
+
   it('uses catalog thinking levels, including v0.3.7 Extra High, and keeps the older fallback', async () => {
     const catalog = JSON.parse(fs.readFileSync(new URL('./fixtures/studio-catalog-v0.2.12.json', import.meta.url), 'utf8'));
     const base = catalog.data.find(m => m.id === 'gemini-4-argon');

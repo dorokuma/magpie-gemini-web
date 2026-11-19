@@ -2,6 +2,11 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## [Unreleased]
+
+### 修复
+- AI Studio 插件兼容 `AIStudio2API` `v0.3.x` 的 `interactions_api` 能力键名：上游自 `v0.3.12` 起将 Deep Research 模型的能力标记由 `interaction_route` 更名为 `interactions_api`，恢复 `deep-research-*` 模型在新版后端 `/v1/models` 下的展示，同时保留旧 `interaction_route` 键的兼容。
+
 ## 0.17.0
 
 ### 新增
