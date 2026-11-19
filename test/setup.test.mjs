@@ -490,6 +490,18 @@ describe('27. One-click sign-in through the plugin', () => {
     return method;
   }
 
+  // post submits the wizard's form the way its page does; the wizard's own route, Origin and
+  // body-limit defences are covered in web-connect.test.mjs.
+  async function post(url, route, data = {}) {
+    const res = await fetch(url + route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: new URL(url).origin },
+      body: JSON.stringify(data)
+    });
+    const body = res.status === 204 ? null : await res.json().catch(() => null);
+    return { status: res.status, body };
+  }
+
   it('offers one-click setup first and keeps the custom-backend method', async () => {
     const plugin = await GeminiWebPlugin({});
     assert.deepEqual(plugin.auth.methods.map(m => m.type), ['oauth', 'api', 'oauth']);
@@ -499,34 +511,44 @@ describe('27. One-click sign-in through the plugin', () => {
     const method = await oauthMethod();
     const before = nextId;
     backendCapabilities = { version: '4.22.0-magpie.1' };
+    let pending;
     try {
-      // authorize returns at once (see the first-download test); the check comes in the callback.
-      const blocked = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
-      const result = await blocked.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /请先升级/);
+      // The capability is checked inside the wizard's submit, not when authorize returns.
+      pending = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN, authuser: '', proxy: 'http://127.0.0.1:7890'
+      });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /请先升级/);
       assert.equal(nextId, before, 'no proxy or account may be added to the old backend');
-    } finally { backendCapabilities = LOGIN_CAPABILITIES; }
-    const pending = await method.authorize();
-    assert.equal(pending.method, 'code');
+    } finally {
+      backendCapabilities = LOGIN_CAPABILITIES;
+      await post(pending.url, '/cancel');
+    }
+    const next = await method.authorize();
+    assert.equal(next.method, 'auto');
+    await post(next.url, '/cancel');
   });
 
-  it('rechecks capability if an old service replaces the backend while the cookie form is open', async () => {
+  it('rechecks capability if an old service replaces the backend while the wizard is open', async () => {
     const pending = await (await oauthMethod()).authorize();
     const before = nextId;
     backendCapabilities = { version: '4.22.0-magpie.1' };
     try {
-      const result = await pending.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /请先升级/);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /请先升级/);
       assert.equal(nextId, before);
-    } finally { backendCapabilities = LOGIN_CAPABILITIES; }
+    } finally {
+      backendCapabilities = LOGIN_CAPABILITIES;
+      await post(pending.url, '/cancel');
+    }
   });
 
-  it('signs in with the local backend key after a working cookie is imported', async () => {
+  it('signs in with the local backend key after a working cookie is imported through the wizard', async () => {
     const pending = await (await oauthMethod()).authorize();
-    assert.equal(pending.method, 'code');
-    assert.match(pending.url, /^https:\/\/gemini\.google\.com\//);
+    assert.equal(pending.method, 'auto');
+    assert.match(pending.url, /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]+$/);
     assert.match(pending.instructions, /cookie/);
 
     // the Google email comes from the signed-in app page, answered here
@@ -536,7 +558,10 @@ describe('27. One-click sign-in through the plugin', () => {
       : realFetch(url, init);
     let result;
     try {
-      result = await pending.callback(`cookie: ${SIGNED_IN.replace('SID=v-SID', 'SID=good')}`);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      assert.equal(submission.status, 200);
+      assert.equal(submission.body.email, 'setup@gmail.com');
+      result = await pending.callback();
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -560,7 +585,9 @@ describe('27. One-click sign-in through the plugin', () => {
     };
     let result;
     try {
-      result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-pooled'));
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-pooled') });
+      assert.equal(submission.status, 200);
+      result = await pending.callback();
     } finally {
       globalThis.fetch = realFetch;
       db.exec('DELETE FROM proxies');
@@ -571,13 +598,17 @@ describe('27. One-click sign-in through the plugin', () => {
     assert.deepEqual(google, []);
   });
 
-  it('fails without keeping the account when the cookie does not sign in', async () => {
+  it('fails in place without keeping the account when the cookie does not sign in', async () => {
     const before = accounts.size;
     const pending = await (await oauthMethod()).authorize();
-    const result = await pending.callback(SIGNED_IN);
-    assert.equal(result.type, 'failed');
-    assert.match(result.error, /not signed in/);
+    const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+    assert.equal(submission.status, 400);
+    assert.match(submission.body.error, /not signed in/);
     assert.equal(accounts.size, before);
+    await post(pending.url, '/cancel');
+    const result = await pending.callback();
+    assert.equal(result.type, 'failed');
+    assert.match(result.error, /取消/);
   });
 
   it('signs in to an account already in the backend pool, one sign-in per Google account', async () => {
@@ -615,27 +646,31 @@ describe('27. One-click sign-in through the plugin', () => {
   it('fails with the missing cookie names before calling the backend', async () => {
     const before = nextId;
     const pending = await (await oauthMethod()).authorize();
-    const result = await pending.callback('NID=1');
-    assert.equal(result.type, 'failed');
-    assert.match(result.error, /缺少 SID/);
+    const submission = await post(pending.url, '/submit', { cookie: 'NID=1' });
+    assert.equal(submission.status, 400);
+    assert.match(submission.body.error, /缺少 SID/);
     assert.equal(nextId, before);
+    await post(pending.url, '/cancel');
   });
 
-  it('shows the cookie steps while a first download runs, and fails in the callback if it does', { timeout: 5000 }, async () => {
+  it('opens the wizard while a first download runs, and reports its failure on submit', { timeout: 5000 }, async () => {
     // Magpie gives authorize one minute, less than a first download can take.
     const fresh = makeDataDir({ binary: null });
     process.env.GEMINI_WEB_DATA_DIR = fresh;
     let finish;
     const download = new Promise(resolve => { finish = resolve; });
     const realFetch = globalThis.fetch;
-    globalThis.fetch = () => download;
+    // The wizard's own posts still need a real fetch; only the release download is mocked.
+    globalThis.fetch = (url, init) => String(url).startsWith('http://127.0.0.1:') ? realFetch(url, init) : download;
     try {
       const pending = await (await oauthMethod()).authorize();
-      assert.equal(pending.method, 'code');
+      assert.equal(pending.method, 'auto');
+      assert.match(pending.url, /^http:\/\/127\.0\.0\.1:/);
       finish(new Response('', { status: 503 }));
-      const result = await pending.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /HTTP 503/);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /HTTP 503/);
+      await post(pending.url, '/cancel');
     } finally {
       globalThis.fetch = realFetch;
       process.env.GEMINI_WEB_DATA_DIR = dataDir;
@@ -643,12 +678,12 @@ describe('27. One-click sign-in through the plugin', () => {
     }
   });
 
-  it('uses the selected session for account checking and the saved email identity (#53)', async () => {
+  it('uses the wizard-submitted index for account checking and the saved email identity (#53)', async () => {
     const method = await oauthMethod();
-    await assert.rejects(method.authorize({ authuser: '-1' }), /账号索引/);
-    const pending = await method.authorize({ authuser: '4' });
-    assert.equal(pending.url, 'https://gemini.google.com/u/4/app');
-    assert.ok(pending.instructions.includes(pending.url));
+    const pending = await method.authorize();
+    const bad = await post(pending.url, '/submit', { cookie: SIGNED_IN, authuser: '-1' });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /账号索引/);
     const realFetch = globalThis.fetch;
     const google = [];
     globalThis.fetch = (url, init) => {
@@ -659,32 +694,32 @@ describe('27. One-click sign-in through the plugin', () => {
       return realFetch(url, init);
     };
     try {
-      const result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-four'));
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-four'), authuser: '4'
+      });
+      assert.equal(submission.status, 200);
+      const result = await pending.callback();
       assert.equal(result.type, 'success');
       assert.equal(accounts.get(result.metadata.account).checkedAuthuser, 4);
       assert.equal(db.prepare('SELECT authuser FROM accounts WHERE id = ?').get(result.metadata.account).authuser, 4);
       assert.equal(result.metadata.email, 'session-four@gmail.com');
       assert.equal(result.metadata.authuser, 4);
-      assert.deepEqual(google, [pending.url]);
+      assert.deepEqual(google, ['https://gemini.google.com/u/4/app']);
     } finally {
       globalThis.fetch = realFetch;
     }
   });
 
-  it('asks for an optional proxy up front, binds the new account to it before checking, and uses it even when another proxy is in the pool', async () => {
+  it('asks only for an optional proxy up front, binds the new account to the submitted proxy before checking, and uses it even when another proxy is in the pool', async () => {
     const method = await oauthMethod();
-    assert.equal(method.prompts[0].key, 'proxy');
+    assert.deepEqual(method.prompts.map(p => p.key), ['proxy'], 'no authuser question before the window exists');
     const question = method.ask({});
     assert.equal(question.key, 'proxy');
     assert.equal(question.validate(''), undefined);
     assert.equal(question.validate('http://127.0.0.1:7890'), undefined);
     assert.match(question.validate('bad-proxy'), /代理地址/);
-    const indexQuestion = method.ask({ proxy: '' });
-    assert.equal(indexQuestion.key, 'authuser');
-    assert.equal(indexQuestion.validate('4'), undefined);
-    assert.match(indexQuestion.validate('-1'), /账号索引/);
-    assert.equal(method.ask({ proxy: '', authuser: '' }), null);
-    assert.equal(method.ask({ proxy: 'http://127.0.0.1:7890', authuser: '4' }), null);
+    assert.equal(method.ask({ proxy: '' }), null);
+    assert.equal(method.ask({ proxy: 'http://127.0.0.1:7890' }), null);
 
     // Pre-populate Proxy A in the pool so Proxy B is the second entry.
     db.exec(`INSERT INTO proxies VALUES (1, 'proxy-a', 'http://127.0.0.1:18080', 1)`);
@@ -693,9 +728,13 @@ describe('27. One-click sign-in through the plugin', () => {
       ? Promise.resolve(new Response('{"oPEP7c":"proxied@gmail.com"}'))
       : realFetch(url, init);
     try {
-      // authorize returns at once; the proxy pool is set up in the callback.
+      // The prompt answer pre-fills the wizard's proxy field; the page posts it back on submit.
       const pending = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
-      const result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-proxied'));
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-proxied'), proxy: 'http://127.0.0.1:7890'
+      });
+      assert.equal(submission.status, 200);
+      const result = await pending.callback();
       assert.equal(result.type, 'success');
 
       const rows = db.prepare('SELECT id, name, url, enabled FROM proxies ORDER BY id').all();
