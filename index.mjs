@@ -1,7 +1,7 @@
 import { normalizeBaseURL, settings, credentials, listModels, forward, UNREACHABLE_HEADER, PLUGIN_ICON } from './lib/backend.mjs';
 import { ensureBackend, localBackend, localSetup } from './lib/native.mjs';
 import { registerMagpieCleanup, isPluginRemovedInActiveMagpie } from './lib/cleanup.mjs';
-import { importCookie, ensureProxy, validateProxyURL, requireLoginBackend } from './lib/setup.mjs';
+import { importCookie, removeAccount, ensureProxy, validateProxyURL, requireLoginBackend } from './lib/setup.mjs';
 import { usage, poolChoices, poolAccounts, accountEmail } from './lib/usage.mjs';
 import { startWebConnect } from './lib/web-connect.mjs';
 
@@ -174,9 +174,27 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
                 isEnded,
                 ...(bind ? { proxy: bind } : {})
               });
-              const account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
-              const signIn = await signInFor(local, account || { id: added.id });
-              return { signIn, email: signIn.metadata?.email || '' };
+              // importCookie's own rollback ends when it returns. A session that ends during
+              // poolAccounts or signInFor (accountEmail waits on Gemini, up to its 15s
+              // timeout) still leaves the account it created, so this submit keeps removing
+              // exactly added.id whenever isEnded is true once the account exists — never
+              // anybody else's.
+              const rollback = async () => {
+                if (!isEnded?.()) return;
+                await removeAccount(local, added.id).catch(() => {});
+                throw new Error('登录已取消。');
+              };
+              let account;
+              try {
+                account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
+                await rollback();
+                const signIn = await signInFor(local, account || { id: added.id });
+                await rollback();
+                return { signIn, email: signIn.metadata?.email || '' };
+              } catch (err) {
+                await rollback();
+                throw err;
+              }
             }
           });
           return {

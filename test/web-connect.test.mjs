@@ -27,6 +27,36 @@ async function fixture({ submit, privateBrowser, timeoutMs, proxy } = {}) {
   return { page, post, seen, origin };
 }
 
+// loadWizardPage runs the served page's own <script> in a minimal DOM so a test can watch
+// what the buttons and status line do while a request is in flight: elements are plain
+// stubs, fetch parks each call in `requests` until the test resolves it, and setTimeout is
+// swallowed so the state poll never reschedules itself.
+async function loadWizardPage() {
+  const { page } = await fixture();
+  const res = await fetch(page.url);
+  const html = await res.text();
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  const elements = new Map();
+  const requests = [];
+  const pathname = new URL(page.url).pathname;
+  const sandbox = {
+    location: { pathname },
+    document: {
+      getElementById: id => {
+        if (!elements.has(id)) {
+          elements.set(id, { disabled: false, hidden: false, className: '', textContent: '', value: '', onclick: null });
+        }
+        return elements.get(id);
+      }
+    },
+    fetch: (url, init) => new Promise(resolve =>
+      requests.push({ route: String(url).slice(pathname.length), resolve })),
+    setTimeout: () => 0
+  };
+  vm.runInNewContext(script, sandbox);
+  return { page, elements, requests };
+}
+
 describe('web connect wizard', () => {
   it('serves a nonce-protected page on 127.0.0.1 with a token path and no external resources', async () => {
     const { page } = await fixture();
@@ -40,7 +70,6 @@ describe('web connect wizard', () => {
       new vm.Script(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1]);
       assert.match(html, /<p id="manual">/, 'the manual-open link is visible before any button is clicked');
       assert.doesNotMatch(html, /<p id="manual" hidden/, 'manual link does not start hidden');
-      assert.match(html, /done = true;\s*\n\s*submitBtn\.disabled = openBtn\.disabled = true;/, 'cancel locks the form out at once');
       assert.doesNotMatch(html, /https?:\/\/(?!127\.0\.0\.1)[^"'< ]*(cdn|js|css|fonts)/i, 'no external assets');
       assert.match(html, /value="http:\/\/127\.0\.0\.1:7890"/, 'proxy prefilled');
       assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
@@ -286,5 +315,53 @@ describe('web connect wizard', () => {
       await timed.close();
       await watch; // drain the event-loop anchor
     }
+  });
+
+  // These two run the page's real event handlers: clicking cancel must lock the form before
+  // /cancel even answers, and a 410 to any post must lock it for good with no retry offered.
+  it('locks the form the moment cancel is clicked, even while a submit is in flight', async () => {
+    const { page, elements, requests } = await loadWizardPage();
+    try {
+      const el = id => elements.get(id);
+      // The page's first state poll asks whether the session ended; it has not.
+      while (!requests.length) await new Promise(r => setImmediate(r));
+      assert.equal(requests[0].route, '/state');
+      requests[0].resolve({ ok: true, status: 200, json: async () => ({ done: false }) });
+      // Submit parks on its fetch.
+      const submitted = el('submit').onclick();
+      while (requests.length < 2) await new Promise(r => setImmediate(r));
+      assert.equal(requests[1].route, '/submit');
+      // Cancel while /submit is in flight: the form locks before /cancel even answers.
+      const cancelled = el('cancel').onclick();
+      assert.equal(el('submit').disabled, true, 'cancel disables submit at once');
+      assert.equal(el('open').disabled, true, 'cancel disables open at once');
+      while (requests.length < 3) await new Promise(r => setImmediate(r));
+      assert.equal(requests[2].route, '/cancel');
+      requests[2].resolve({ ok: true, status: 204, json: async () => null });
+      // The in-flight /submit is refused with 410: the form stays locked, no retry offered.
+      requests[1].resolve({ ok: false, status: 410, json: async () => ({ error: '登录已经结束，请回到 Magpie。' }) });
+      await submitted;
+      await cancelled;
+      assert.equal(el('submit').disabled, true);
+      assert.equal(el('open').disabled, true);
+      assert.doesNotMatch(el('submit-status').textContent, /可修改/);
+    } finally { await page.close(); }
+  });
+
+  it('locks the form and offers no retry when the server answers 410 to a submit', async () => {
+    const { page, elements, requests } = await loadWizardPage();
+    try {
+      const el = id => elements.get(id);
+      while (!requests.length) await new Promise(r => setImmediate(r));
+      requests[0].resolve({ ok: true, status: 200, json: async () => ({ done: false }) });
+      const submitted = el('submit').onclick();
+      while (requests.length < 2) await new Promise(r => setImmediate(r));
+      assert.equal(requests[1].route, '/submit');
+      requests[1].resolve({ ok: false, status: 410, json: async () => ({ error: '登录已经结束，请回到 Magpie。' }) });
+      await submitted;
+      assert.equal(el('submit').disabled, true, 'a 410 locks the submit button for good');
+      assert.equal(el('open').disabled, true, 'a 410 locks the open button for good');
+      assert.doesNotMatch(el('submit-status').textContent, /可修改/);
+    } finally { await page.close(); }
   });
 });

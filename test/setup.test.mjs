@@ -164,12 +164,22 @@ describe('25. Cookie import through the admin API', () => {
     const ended = [];
     const r = importCookie(setup, SIGNED_IN, {
       isEnded: () => ended.length > 0,
-      fetchFn: adminFetch(() => {
-        ended.push(true); // the check starting is the last moment the account could be verified
-        return Response.json({ ok: true, detail: 'fine' });
-      }, calls)
+      fetchFn: async (url, init) => {
+        calls.push({ path: new URL(url).pathname, method: init.method, auth: init.headers?.Authorization, body: init.body });
+        if (new URL(url).pathname === '/') return Response.json(LOGIN_CAPABILITIES);
+        if (init.method === 'POST' && url.endsWith('/cookies')) {
+          // The cancel lands as the account-creation answer arrives: importCookie's guard
+          // right after POST /cookies must fire, and the check must never be called.
+          ended.push(true);
+          return Response.json({ id: 7 });
+        }
+        if (url.endsWith('/check')) return Response.json({ ok: true, detail: 'fine' });
+        return Response.json({ ok: true });
+      }
     });
     await assert.rejects(r, /登录已取消/);
+    assert.equal(calls.some(c => c.path === '/admin/api/cookies/7/check'), false,
+      'the check must not run once the session has ended');
     assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).filter(s => s.startsWith('DELETE')),
       ['DELETE /admin/api/cookies/7']);
     assert.equal(calls.at(-1).method, 'DELETE');
@@ -631,6 +641,51 @@ describe('27. One-click sign-in through the plugin', () => {
     } finally {
       checkGate = null;
       release();
+    }
+  });
+
+  // A cancel can land after importCookie returned, while signInFor waits on the app page for
+  // the account's email: the account the import just created is already verified, but the
+  // session is over and nobody signs in to it. Submit keeps the rollback for that window and
+  // must delete exactly that account — an enabled one already in the pool stays untouched.
+  it('rolls back the imported account when cancel lands while signInFor waits for the email', { timeout: 10000 }, async () => {
+    const before = nextId;
+    // An enabled account already in the pool: the rollback must not touch it.
+    db.exec(`INSERT INTO accounts (id, label, cookie, status, proxy_id) VALUES (40, 'existing', 'SID=keep', 'enabled', 0)`);
+    const realFetch = globalThis.fetch;
+    let emailRequested = false;
+    let releaseEmail;
+    const emailGate = new Promise(resolve => { releaseEmail = resolve; });
+    globalThis.fetch = (url, init) => {
+      if (String(url).startsWith('https://gemini.google.com/')) {
+        emailRequested = true;
+        return emailGate.then(() => new Response('{"oPEP7c":"late@gmail.com"}'));
+      }
+      return realFetch(url, init);
+    };
+    const pending = await (await oauthMethod()).authorize();
+    try {
+      const waiting = pending.callback();
+      const submission = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      // Wait until the import is verified and signInFor is parked inside the email fetch,
+      // then cancel.
+      while (!emailRequested) await new Promise(resolve => setImmediate(resolve));
+      assert.equal((await post(pending.url, '/cancel')).status, 204);
+      releaseEmail();
+      const r = await submission;
+      assert.equal(r.status, 410);
+      const outcome = await waiting;
+      assert.equal(outcome.type, 'failed');
+      assert.match(outcome.error, /取消/);
+      // The account the import created was deleted again; the pre-existing one was not.
+      assert.equal(nextId, before + 1, 'the account was created, then rolled back');
+      assert.equal(accounts.size, 0);
+      // The pre-existing account's row was not touched by the rollback.
+      assert.equal(db.prepare('SELECT cookie FROM accounts WHERE id = 40').get().cookie, 'SID=keep');
+    } finally {
+      globalThis.fetch = realFetch;
+      releaseEmail();
+      db.exec('DELETE FROM accounts WHERE id = 40');
     }
   });
 
