@@ -12,7 +12,7 @@
 
 本项目是 **[BUKOWSKIREAL/magpie-gemini-web](https://github.com/BUKOWSKIREAL/magpie-gemini-web)** 的活跃分支，基于原版 MIT 许可开源（[LICENSE](LICENSE)）。感谢原作者 [@bukowskiiiiii](https://github.com/bukowskiiiiii)，以及上游后端与生态作者：
 
-- Gemini Web 后端：[zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go)（本仓 pin 的官方预编译来源，许可见 [LICENSE-UPSTREAM](LICENSE-UPSTREAM)）
+- Gemini Web 后端上游：[zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go)（许可见 [LICENSE-UPSTREAM](LICENSE-UPSTREAM)；本仓 pin 的预编译二进制来自活跃分支 [dorokuma/gemini-web2api-go](https://github.com/dorokuma/gemini-web2api-go)）
 - AI Studio 后端：[Mag1cFall/AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)
 - 宿主网关：[Magpie](https://usemagpie.ai/)
 

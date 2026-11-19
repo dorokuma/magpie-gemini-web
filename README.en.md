@@ -12,7 +12,7 @@ Use **Google AI Studio** and **Gemini on the web** through your Google account i
 
 This project is an actively maintained **fork of [BUKOWSKIREAL/magpie-gemini-web](https://github.com/BUKOWSKIREAL/magpie-gemini-web)**, released under the original MIT license ([LICENSE](LICENSE)). Thanks to the original author [@bukowskiiiiii](https://github.com/bukowskiiiiii) and the upstream backend/ecosystem authors:
 
-- Gemini Web backend: [zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go) (the pinned official prebuilt source of this repo, see [LICENSE-UPSTREAM](LICENSE-UPSTREAM))
+- Gemini Web backend upstream: [zexadev/gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go) (license: [LICENSE-UPSTREAM](LICENSE-UPSTREAM); the prebuilt binary pinned by this repo comes from the actively maintained fork [dorokuma/gemini-web2api-go](https://github.com/dorokuma/gemini-web2api-go))
 - AI Studio backend: [Mag1cFall/AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)
 - Host gateway: [Magpie](https://usemagpie.ai/)
 
