@@ -2,6 +2,14 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## 0.17.0
+
+### 新增
+- Gemini Web 后端 pin 升级至 **`dorokuma/gemini-web2api-go` `v6.1.0`** 官方预编译二进制：**对话模式与任务模式分离**，新增任务/工具密集型场景独立模型 `gemini-4-neon-task` 与 `gemini-4-hydrogen-task`（对应 Gemini Web 网页端「任务」开关），日常对话模型 `gemini-4-neon` / `gemini-4-hydrogen` / `gemini-4-carbon` 行为不变；同时包含 `v6.0.1` 的工具调用提示词修复（不再诱发「工具调用次数有上限/工具被停用」幻觉而拒绝继续调用工具）。
+
+### 文档
+- README（中英）与 `package.json` description 清理过时的 `gemini-4-argon` / Argon 文案（谷歌已下架 Argon），补充对话模式与任务模式分离说明；删除「与原版的主要差异」中面向维护者的发版流程条目。
+
 ## 0.16.0
 
 ### 破坏性变更
