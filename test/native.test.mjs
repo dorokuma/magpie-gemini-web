@@ -334,7 +334,7 @@ describe('24. per-IP rate limits merge into config.json without disturbing other
     const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
     fs.writeFileSync(path.join(binDir, 'gemini-web2api-go'), validContent, { mode: 0o700 });
     fs.writeFileSync(path.join(dataDir, 'argon-build.json'), JSON.stringify({ sha256: validHash, version: 'v0.0.0-test' }));
-    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: 8083, multi_turn: true }));
+    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: 8083, multi_turn: true, per_ip_rpm: 30 }));
     fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_test', adminToken: 'admin_test' }));
 
     const adminCalls = [];
@@ -391,6 +391,17 @@ describe('24. per-IP rate limits merge into config.json without disturbing other
     assert.equal(runtimeConfig.per_ip_concurrent, 5);
     assert.equal(spawned.length, 0, 'an already-healthy backend is reused, not restarted');
 
+    // The hot apply also persists the passed limits into the on-disk config.json,
+    // merging key by key while port, multi_turn and every other field stay put.
+    const configPath = path.join(dataDir, 'config.json');
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.equal(onDisk.per_ip_rpm, 120);
+    assert.equal(onDisk.per_ip_rph, 200);
+    assert.equal(onDisk.per_ip_concurrent, undefined, 'limits not passed are not forced onto disk');
+    assert.equal(onDisk.port, 8083);
+    assert.equal(onDisk.multi_turn, true);
+    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+
     // Values now in sync: a GET happens but no second PUT.
     adminCalls.length = 0;
     await ensureBackend({ ...opts, rateLimit: { per_ip_rpm: 120, per_ip_rph: 200 } });
@@ -411,8 +422,10 @@ describe('24. per-IP rate limits merge into config.json without disturbing other
     const validHash = crypto.createHash('sha256').update(validContent).digest('hex');
     fs.writeFileSync(path.join(binDir, 'gemini-web2api-go'), validContent, { mode: 0o700 });
     fs.writeFileSync(path.join(dataDir, 'argon-build.json'), JSON.stringify({ sha256: validHash, version: 'v0.0.0-test' }));
-    fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port: 8083 }));
+    const configPath = path.join(dataDir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify({ host: '127.0.0.1', port: 8083, per_ip_rpm: 30 }));
     fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ apiKey: 'gw_test', adminToken: 'admin_test' }));
+    const configBefore = fs.readFileSync(configPath, 'utf8');
 
     const fetchFn = async (url) => {
       const target = String(url);
@@ -425,6 +438,8 @@ describe('24. per-IP rate limits merge into config.json without disturbing other
       ensureBackend({ dataDir, platform: 'darwin', arch: 'arm64', fetchFn, verifyIdentity: () => false, rateLimit: { per_ip_rpm: 120 } }),
       /Cannot apply per-IP rate limits.*HTTP 403/
     );
+    // A failed hot apply must not touch the on-disk config.json.
+    assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });
