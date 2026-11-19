@@ -1,6 +1,6 @@
 {
   "name": "@dorokuma/magpie-gemini-web",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Google AI Studio and Gemini Web provider for Magpie (Gemini 4 Neon / Carbon / Hydrogen in Chat & Task modes, Nano Banana image generation, Deep Research), backed by AIStudio2API and gemini-web2api-go",
   "type": "module",
   "main": "./index.mjs",
