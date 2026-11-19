@@ -2,6 +2,18 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## 0.16.0
+
+### 破坏性变更
+- Gemini Web 后端 pin 升级至 **`dorokuma/gemini-web2api-go` `v6.0.0`** 官方预编译二进制：上游模型目录将原 Argon 的 Mode=8 槽位原位改名为 4 Carbon，**对外 `gemini-4-argon` / `gemini-4-argon-thinking` / `gemini-4-argon-thinking-medium` 三条模型已移除**，请求这些模型名不再被识别。请改用 `gemini-4-carbon*` 或新增的 `gemini-4-neon*`（Argon↔Carbon 的 `strict_model` 同槽互认逻辑保留）。
+
+### 新增
+- **Gemini 4 Neon 模型接入**：Gemini Web 新增 `gemini-4-neon` / `gemini-4-neon-thinking` / `gemini-4-neon-thinking-medium` 三条对外模型（付费号专属，免费号静默降级）；Neon 为服务端内部思考模型，回复不输出 `reasoning_content`。
+- `strict_model` 同槽升级豁免降级冷却：请求 `4 Neon Medium` 收到 `4 Neon High` 自报属同槽单向升级，不再误判降级并冷却账号。
+
+### 文档
+- README（中英）与 `package.json` description 更新 Gemini Web 侧模型清单为 Gemini 4 Carbon / Hydrogen / Neon，注明 Neon 服务端内部思考不输出 `reasoning_content`；AI Studio 侧原有模型说明（含 `gemini-4-argon`）不变。
+
 ## 0.15.3
 
 ### 修复

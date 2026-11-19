@@ -1,31 +1,31 @@
 {
-  "version": "5.0.0",
+  "version": "6.0.0",
   "repository": "dorokuma/gemini-web2api-go",
-  "tag": "v5.0.0",
+  "tag": "v6.0.0",
   "binaries": {
     "darwin-x64": {
-      "asset": "gemini-web2api-go_v5.0.0_darwin_amd64",
-      "sha256": "852af30ffbcfd1402905f855e78d41d54a2f62313085aab420423ea0d855e2c1"
+      "asset": "gemini-web2api-go_v6.0.0_darwin_amd64",
+      "sha256": "1c4c0bf8c4ca1f55cbb33b2a91bf58216d5c0221536cf23c65487ecbd38db354"
     },
     "darwin-arm64": {
-      "asset": "gemini-web2api-go_v5.0.0_darwin_arm64",
-      "sha256": "dfdcac8065483176fc42c6387014aa106cfe30175b94c393d7345f596eb26c7a"
+      "asset": "gemini-web2api-go_v6.0.0_darwin_arm64",
+      "sha256": "8ea0b15abb5ed05dc6ca06d4bcece7e61a58f10007f9f3b78587522293dd6c33"
     },
     "linux-x64": {
-      "asset": "gemini-web2api-go_v5.0.0_linux_amd64",
-      "sha256": "7a13f0e9c3003732eeb6346d16be191f486d1eaa035d61f1e8751ee287680e2a"
+      "asset": "gemini-web2api-go_v6.0.0_linux_amd64",
+      "sha256": "28cb08ca44189b4e016b5fbade95b7cadf7b63533f76b8c49532fea25000b3ef"
     },
     "linux-arm64": {
-      "asset": "gemini-web2api-go_v5.0.0_linux_arm64",
-      "sha256": "c0c468c7c8f85c0772a389586bbc92d7493e27e3b26e5baba0fc749abc427bfe"
+      "asset": "gemini-web2api-go_v6.0.0_linux_arm64",
+      "sha256": "3e71505323448a0b6f22b1da80ea7291953fe0a3eb01a937cba46b8bc473ccb3"
     },
     "win32-x64": {
-      "asset": "gemini-web2api-go_v5.0.0_windows_amd64.exe",
-      "sha256": "08ce950afe2eda4a622f9c1560e578bdb13d00477ac9f20cd5bd62036a4345f4"
+      "asset": "gemini-web2api-go_v6.0.0_windows_amd64.exe",
+      "sha256": "de149314b195e3ae462b7bd68eaeb283fac13731112f032c11f69e4cbd70ad97"
     },
     "win32-arm64": {
-      "asset": "gemini-web2api-go_v5.0.0_windows_arm64.exe",
-      "sha256": "fb36c3b457e6b372b6a528c19ede49637712d384b4623751174aba1d7d621f26"
+      "asset": "gemini-web2api-go_v6.0.0_windows_arm64.exe",
+      "sha256": "123f7a7208089f30d975d8b0fa34214570c34c29fdbffd0b9ed775b50698f235"
     }
   }
 }
