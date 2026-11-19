@@ -6,7 +6,7 @@
 
 Use **Google AI Studio** and **Gemini on the web** through your Google account in [Magpie](https://usemagpie.ai/). The plugin runs [AIStudio2API](https://github.com/Mag1cFall/AIStudio2API) and [gemini-web2api-go](https://github.com/zexadev/gemini-web2api-go) locally, providing chat, native function calling, Nano Banana image generation, and Deep Research through OpenAI-compatible and Gemini APIs.
 
-> **New model support:** **Google AI Studio (`ai-studio`)** automatically follows official stable backend releases and supports **`gemini-4-hydrogen`** (including the `xhigh` thinking tier), **`gemini-4-carbon`** (requires an eligible account tier such as Google AI Ultra), and **`gemini-4-argon`**. **Gemini Web (`gemini-web`)** is backed by [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0), which natively supports dedicated `gemini-4-carbon` / `gemini-4-hydrogen` model IDs (including `-thinking` variants) and mutually recognizes slot upgrades/downgrades under `strict_model`; signed-in `gemini-4-argon` still has a known hang issue in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53), so `ai-studio` is recommended.
+> **New model support:** **Google AI Studio (`ai-studio`)** automatically follows official stable backend releases and supports **`gemini-4-hydrogen`** (including the `xhigh` thinking tier), **`gemini-4-carbon`** (requires an eligible account tier such as Google AI Ultra), and **`gemini-4-argon`**. **Gemini Web (`gemini-web`)** is backed by [`dorokuma/gemini-web2api-go` `v6.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v6.0.0), which natively supports dedicated `gemini-4-carbon` / `gemini-4-hydrogen` / **`gemini-4-neon`** model IDs (including `-thinking` variants) and mutually recognizes slot upgrades/downgrades under `strict_model`; the `gemini-4-neon` family thinks server-side internally and never emits `reasoning_content`. Gemini Web's public models no longer include `gemini-4-argon*` since backend v6.0.0—use `gemini-4-carbon*` or `gemini-4-neon*` instead.
 
 ## Fork Notice & Acknowledgements
 
@@ -19,8 +19,8 @@ This project is an actively maintained **fork of [BUKOWSKIREAL/magpie-gemini-web
 **Key differences from upstream** (full history in [CHANGELOG](CHANGELOG.md)):
 
 1. npm package renamed to the scoped **`@dorokuma/magpie-gemini-web`**; the original unscoped `magpie-gemini-web` remains maintained by the upstream author as an independent npm package.
-2. The Gemini Web backend is pinned to the **official Release prebuilt binaries** of `dorokuma/gemini-web2api-go` (currently `v5.0.0`, SHA-256 synced one-way by script); the local patch-and-rebuild pipeline was retired.
-3. Gemini Web adds `gemini-4-carbon` / `gemini-4-hydrogen` model IDs with slot cross-validation; fixes include phantom session cleanup, AI Studio proxy precedence, and atomic publish/self-healing for update locks.
+2. The Gemini Web backend is pinned to the **official Release prebuilt binaries** of `dorokuma/gemini-web2api-go` (currently `v6.0.0`, SHA-256 synced one-way by script); the local patch-and-rebuild pipeline was retired.
+3. Gemini Web adds `gemini-4-carbon` / `gemini-4-hydrogen` / `gemini-4-neon` model IDs with slot cross-validation; fixes include phantom session cleanup, AI Studio proxy precedence, and atomic publish/self-healing for update locks.
 4. Release process: strict `vX.Y.Z` tags + `make release-check` gate; CI runs `make check`, backend pin online verification, and 6-platform smoke tests.
 
 
@@ -31,14 +31,14 @@ The plugin provides two independent providers that can be used individually or t
 | Feature | Google AI Studio (`ai-studio`) | Gemini Web (`gemini-web`) |
 | :--- | :--- | :--- |
 | **Best for** | **Primary use & coding agents (recommended)** | General chat & web quota |
-| **Key models** | `gemini-4-carbon` (Ultra / eligible accounts), `gemini-4-hydrogen`, `gemini-4-argon`, `gemini-3.1-pro`, Flash series, Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen` (including `-thinking` variants), `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro`, `gemini-4-argon` (see [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53)) |
+| **Key models** | `gemini-4-carbon` (Ultra / eligible accounts), `gemini-4-hydrogen`, `gemini-4-argon`, `gemini-3.1-pro`, Flash series, Deep Research | `gemini-4-carbon` / `gemini-4-hydrogen` / `gemini-4-neon` (including `-thinking` variants; the Neon family thinks server-side internally and never emits `reasoning_content`), `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro` |
 | **Tool calling** | **Native Function Calling**, reliable | Prompt-emulated (experimental; Flash often skips tools) |
-| **Thinking levels** | Supported levels from the model catalog: `minimal` / `low` / `medium` / `high` / `xhigh` (Hydrogen) | `low` (base) / `medium` (`-thinking-medium`, `gemini-4-argon` only) / `high` (`-thinking` extended thinking) |
+| **Thinking levels** | Supported levels from the model catalog: `minimal` / `low` / `medium` / `high` / `xhigh` (Hydrogen) | `low` (base) / `medium` (`-thinking-medium`, Carbon / Neon families) / `high` (`-thinking` extended thinking) |
 | **Image input** | On by default; chat models read images | On by default; chat models read images (needs a signed-in cookie) |
 | **Image generation** | Nano Banana models, for Magpie's image generation (Magpie v0.1.2075+, see below) | Not supported |
 | **Sign-in method** | Automatic official installation; confirm an imported account | Copy `cookie` from a private/incognito window |
 | **Usage cards** | Shows models currently on cooldown and recovery times | Syncs **5-hour** & **weekly** usage and reset times from the web |
-| **Local backend** | AIStudio2API (automatic installation and stable updates) | gemini-web2api-go (`v5.0.0` pinned binary) |
+| **Local backend** | AIStudio2API (automatic installation and stable updates) | gemini-web2api-go (`v6.0.0` pinned binary) |
 
 ---
 
@@ -245,13 +245,13 @@ When a plugin error asks you to run a command, it includes the full ready-to-cop
 - Models with `-build` or `assistant_route` are filtered out: they inject the Build coding assistant's own system prompt and are not offered as ordinary Agent models. Refresh with `magpie provider models ai-studio` after upgrading.
 
 **Gemini Web optimized backend upgrades & rollback:**
-- The missing multi-account index in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53) is fixed. Reimport affected cookies or correct the index in backend account management. A successful account check does not guarantee generation; signed-in `gemini-4-argon` hangs remain unresolved upstream (this build still uses StreamGenerate and logs that `web_channel` is ignored when enabled), so prefer `ai-studio` for Argon. Backend [`dorokuma/gemini-web2api-go` `v5.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) natively exposes dedicated `gemini-4-carbon` and `gemini-4-hydrogen` model IDs (including `-thinking` variants); its `strict_model` slot check mutually recognizes display-name upgrades/downgrades, so paid accounts whose `gemini-3.8-flash` calls are routed to `4 Hydrogen` are identified correctly instead of failing with `429 model_downgraded`.
-- One-click setup pins the prebuilt [v5.0.0](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v5.0.0) binaries from the backend repository by default (one repo, one artifact: six-platform SHA-256 pins live in `lib/backend-release.json`; the plugin no longer patches and rebuilds the backend). Chat requests are timed by silence: while Google queues a request it sends a heartbeat every 60 s, and the backend waits through it for the first words. A try is given up, and retried, only after Google has sent nothing for `request_timeout_sec` (180 s by default), so a long reply that keeps coming is never cut off either.
-- **Upgrading:** Running backends are not interrupted automatically. Stop the existing process (PID in `backend.pid` inside the data directory); the next Magpie launch or request will upgrade the binary while preserving config and cookies.
+- The missing multi-account index in [#53](https://github.com/dorokuma/magpie-gemini-web/issues/53) is fixed. Reimport affected cookies or correct the index in backend account management. Backend [`dorokuma/gemini-web2api-go` `v6.0.0`](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v6.0.0) natively exposes dedicated `gemini-4-carbon`, `gemini-4-hydrogen`, and `gemini-4-neon` model IDs (including `-thinking` variants; the Neon family thinks server-side internally and never emits `reasoning_content`), and drops the public `gemini-4-argon*` models (the old Argon slot was renamed to 4 Carbon in the upstream catalog—use `gemini-4-carbon*` or `gemini-4-neon*`, or `ai-studio` for Argon); its `strict_model` slot check mutually recognizes display-name upgrades/downgrades, so paid accounts whose `gemini-3.8-flash` calls are routed to `4 Hydrogen` are identified correctly instead of failing with `429 model_downgraded`.
+- One-click setup pins the prebuilt [v6.0.0](https://github.com/dorokuma/gemini-web2api-go/releases/tag/v6.0.0) binaries from the backend repository by default (one repo, one artifact: six-platform SHA-256 pins live in `lib/backend-release.json`; the plugin no longer patches and rebuilds the backend). Chat requests are timed by silence: while Google queues a request it sends a heartbeat every 60 s, and the backend waits through it for the first words. A try is given up, and retried, only after Google has sent nothing for `request_timeout_sec` (180 s by default), so a long reply that keeps coming is never cut off either.
+- **Upgrading:** On load the plugin detects a stale managed backend process, stops it and upgrades the binary to the pinned `v6.0.0`, which may interrupt in-flight generation requests. Wait for in-flight requests to finish, or stop the existing process manually (PID in `backend.pid` inside the data directory) before upgrading. Instances not managed or recognizable by the plugin are not guaranteed to auto-update. Config and cookies are preserved.
 - **Rollback to upstream / restore the pinned build** (run in the plugin directory after stopping the backend):
   ```bash
   npm run backend:install:upstream  # Roll back and pin to upstream zexadev v4.28.0
-  npm run backend:install           # Restore the default pinned v5.0.0
+  npm run backend:install           # Restore the default pinned v6.0.0
   ```
 - For pin sync, verification and smoke procedures, see [docs/backend-release.md](docs/backend-release.md).
 
