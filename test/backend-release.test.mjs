@@ -37,7 +37,7 @@ it('ships pinned default and rollback downloads for all six supported targets', 
     const [platform, arch] = key.split('-');
     const pinned = pinnedBinary(platform, arch);
     const upstream = pinnedBinary(platform, arch, 'upstream');
-    assert.match(pinned.url, /^https:\/\/github\.com\/dorokuma\/gemini-web2api-go\/releases\/download\/v6\.2\.1\//);
+    assert.match(pinned.url, /^https:\/\/github\.com\/dorokuma\/gemini-web2api-go\/releases\/download\/v6\.2\.2\//);
     assert.match(pinned.sha256, /^[a-f0-9]{64}$/);
     assert.match(upstream.url, /^https:\/\/github\.com\/zexadev\/gemini-web2api-go\/releases\/download\/v4\.28\.0\//);
     assert.notEqual(pinned.sha256, upstream.sha256);
