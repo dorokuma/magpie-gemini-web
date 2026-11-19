@@ -1,11 +1,11 @@
 import { normalizeBaseURL, settings, credentials, listModels, forward, UNREACHABLE_HEADER, PLUGIN_ICON } from './lib/backend.mjs';
 import { ensureBackend, localBackend, localSetup } from './lib/native.mjs';
 import { registerMagpieCleanup, isPluginRemovedInActiveMagpie } from './lib/cleanup.mjs';
-import { parseCookieInput, parseAuthuser, importCookie, ensureProxy, validateProxyURL, requireLoginBackend } from './lib/setup.mjs';
+import { importCookie, removeAccount, ensureProxy, validateProxyURL, requireLoginBackend } from './lib/setup.mjs';
 import { usage, poolChoices, poolAccounts, accountEmail } from './lib/usage.mjs';
+import { startWebConnect } from './lib/web-connect.mjs';
 
 const ID = 'gemini-web';
-const GEMINI_URL = 'https://gemini.google.com/app';
 
 // Saved macOS Task sign-ins predate removal of the native bridge. Reject them here so their
 // local key is not sent to the Gemini Web backend.
@@ -17,17 +17,17 @@ function retiredTaskError() {
   return Object.assign(new Error('macOS 原生 Task 已停用，请改用 Gemini Web 登录'), { signIn: 'expired' });
 }
 
-// The backend keeps the session alive by rotating its cookies, which signs the browser it came
-// from out of Google. A private window that is closed afterwards gives the backend a session of
-// its own.
-const COOKIE_STEPS = [
-  '请用浏览器的无痕 / 隐私窗口（推荐 Firefox），不要用你平时登录着 Google 的窗口：后端会定时刷新这份登录，和浏览器共用会被 Google 踢出登录。',
-  `1. 在无痕窗口打开 ${GEMINI_URL} 并登录要使用的 Google 账号`,
-  '确认这个窗口的目标账号索引与刚才填写的一致；无痕窗口中的索引可能和普通窗口不同。如地址是 /u/4/app，应填 4；填错请取消并重新登录。',
-  '2. 按 F12（macOS 按 ⌥⌘I）打开开发者工具，切到 Network（网络）面板，刷新页面',
-  '3. 点列表里任意一个 gemini.google.com 的请求 → Headers（标头）→ Request Headers（请求标头）',
-  '4. 找到 cookie 那一行，复制它的值，粘贴到下面',
-  '5. 直接关掉无痕窗口，不要点「退出登录」（退出会让这份 Cookie 失效）',
+// The local page authorize opens walks the sign-in in its natural order: a private window to
+// Gemini first (the backend rotates this session, so a shared one would sign the daily browser
+// out of Google), the Cookie copied from it, then the /u/N index that same window shows. Magpie
+// itself would open gemini.google.com in the default browser — wrong window — and ask() would
+// want the index before any window existed.
+const GUIDE_STEPS = [
+  'Magpie 会打开本机登录向导页，按页面三步走：',
+  '1. 点「打开无痕窗口登录 Gemini」（推荐 Firefox），在无痕窗口登录 Google 账号',
+  '2. 按 F12 复制 gemini.google.com 请求的 cookie 值，填回向导页',
+  '3. 对照无痕窗口地址栏 /u/N/app 填账号索引（单账号留空），点「验证并完成登录」',
+  '为什么必须无痕窗口：后端会定时刷新这份登录保活，和日常浏览器共用会被 Google 踢出登录。',
   'Cookie 只保存在本机的 Gemini Web 后端里，不会发到别处。'
 ].join('\n');
 
@@ -99,20 +99,6 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
     }
   };
 
-  const authuserPrompt = {
-    type: 'text',
-    key: 'authuser',
-    message: 'Google 账号索引（复制 Cookie 的同一窗口中 /u/N/app 的 N；单账号留空为 0，无痕窗口可能不同）',
-    placeholder: '0',
-    validate: value => {
-      try {
-        parseAuthuser(value);
-      } catch (e) {
-        return e.message;
-      }
-    }
-  };
-
   // Bring a backend set up earlier back after Magpie or the computer restarts. Not awaited:
   // requests that arrive first start it themselves through forwardManaged.
   if (localBackend()) {
@@ -141,37 +127,87 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
       methods: [{
         type: 'oauth',
         label: '一键配置本地 Gemini Web（推荐）',
-        prompts: [proxyPrompt, authuserPrompt],
+        prompts: [proxyPrompt],
         ask(inputs) {
           if (!inputs || !('proxy' in inputs)) return proxyPrompt;
-          return 'authuser' in inputs ? null : authuserPrompt;
+          return null;
         },
-        // Installs and starts the pinned backend while the user copies the Gemini cookie; the
-        // callback then waits for it, configures its proxy pool when a proxy URL is given, and
-        // imports the cookie (importCookie checks the backend can bind the account to a proxy).
-        // The result carries the backend's own API key, so Magpie saves an API-key sign-in,
-        // one for each Google account (see signInFor).
+        // Opens the local sign-in wizard instead of gemini.google.com so Magpie's window is the
+        // guide, not the wrong browser. The backend install starts now so it downloads while
+        // the user signs in; the wizard's submit waits for it, imports the cookie with the
+        // window's own authuser index, and resolves wait() with the sign-in result (the
+        // backend's own API key, one Magpie sign-in per Google account — see signInFor).
         async authorize(inputs) {
           const proxy = validateProxyURL(inputs?.proxy || opts.proxy || '');
-          const authuser = parseAuthuser(inputs?.authuser);
-          const loginURL = authuser ? `https://gemini.google.com/u/${authuser}/app` : GEMINI_URL;
-          const ready = ensureBackend({ proxy });
-          ready.catch(() => {});
-          return {
-            url: loginURL,
-            method: 'code',
-            instructions: COOKIE_STEPS.replaceAll(GEMINI_URL, loginURL),
-            async callback(code) {
-              let local, cookie, added;
+          // The first ensureBackend runs while the user signs in. Its outcome must not be
+          // locked into the submit: when it failed (e.g. a first download without a working
+          // proxy), or the wizard sends a different proxy than the prompt's, submit retries
+          // ensureBackend with the proxy the form actually carries — a locked-in rejection
+          // would make every in-place retry fail the same way forever.
+          let initialProxy = proxy;
+          let ready;
+          let readyFailed = false;
+          // Each (re)start is a generation of its own: the catch marks only the generation
+          // that still owns `ready`, so a rejection landing after a retry replaced it can
+          // never poison the new generation's clean slate.
+          const startReady = p => {
+            initialProxy = p;
+            readyFailed = false;
+            const attempt = ensureBackend({ proxy: p });
+            ready = attempt;
+            attempt.catch(() => { if (ready === attempt) readyFailed = true; });
+          };
+          startReady(proxy);
+          const session = await startWebConnect({
+            proxy,
+            async submit({ cookie, authuser, proxy: formProxy, isEnded }) {
+              if (readyFailed || (formProxy !== undefined && formProxy !== initialProxy)) {
+                startReady(formProxy !== undefined ? formProxy : initialProxy);
+              }
+              const local = await ready;
+              // The user may have cancelled or the session timed out while the backend was
+              // starting; importing into it now would keep an account nobody signs in to.
+              if (isEnded?.()) throw new Error('登录已结束，未导入 Cookie。');
+              const bind = formProxy !== undefined ? formProxy : initialProxy;
+              const added = await importCookie(local, cookie, {
+                authuser,
+                isEnded,
+                ...(bind ? { proxy: bind } : {})
+              });
+              // importCookie's own rollback ends when it returns. A session that ends during
+              // poolAccounts or signInFor (accountEmail waits on Gemini, up to its 15s
+              // timeout) still leaves the account it created, so this submit keeps removing
+              // exactly added.id whenever isEnded is true once the account exists — never
+              // anybody else's.
+              const rollback = async () => {
+                if (!isEnded?.()) return;
+                await removeAccount(local, added.id).catch(() => {});
+                throw new Error('登录已取消。');
+              };
+              let account;
               try {
-                cookie = parseCookieInput(code);
-                local = await ready;
-                added = await importCookie(local, cookie, { authuser, ...(proxy ? { proxy } : {}) });
+                account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
+                await rollback();
+                const signIn = await signInFor(local, account || { id: added.id });
+                await rollback();
+                return { signIn, email: signIn.metadata?.email || '' };
+              } catch (err) {
+                await rollback();
+                throw err;
+              }
+            }
+          });
+          return {
+            url: session.url,
+            method: 'auto',
+            instructions: GUIDE_STEPS,
+            async callback() {
+              try {
+                const done = await session.wait();
+                return done?.signIn || { type: 'failed', error: '登录没有返回结果' };
               } catch (err) {
                 return { type: 'failed', error: err.message };
               }
-              const account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
-              return signInFor(local, account || { id: added.id });
             }
           };
         }

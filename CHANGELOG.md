@@ -2,6 +2,16 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## [Unreleased]
+
+### 修复
+- Gemini Web 一键登录不再让 Magpie 直接用系统默认浏览器打开 gemini.google.com：`authorize` 改为打开本机登录向导页（`127.0.0.1` 随机端口 + 随机 token 路径），页内按钮以无痕 / 隐私模式启动检测到的浏览器（Firefox 优先，其次 Chrome / Brave / Chromium / Edge；找不到时给出可手动复制的链接），避免登录会话落在日常窗口被 Google 踢出。
+- Google 账号索引（authuser）不再在浏览器打开前提前询问：向导页在无痕窗口登录后再对照地址栏 `/u/N/app` 填写，与 Cookie、代理同一表单提交；校验或导入失败原地报错可直接改字段重试，不必取消重来。
+- 无痕窗口启动器修复两处隐藏故障：浏览器二进制探测只查存在性，同名目录或无 `+x` 权限的文件会被误判为可用（`resolveBin` 现在校验普通文件与 POSIX 可执行权限）；`spawn` 的异步 `'error'`（如 `EACCES`/`ENOENT`）原会以未处理异常击穿宿主进程，`launchPrivateBrowser` 改为 `async`、在 `'spawn'`/`'error'` 间竞速等待，启动失败自动回退下一个候选浏览器，不再假报成功。
+- 向导页 `/submit` 增加单飞互斥：一次验证未结束时并发提交直接返回 `409`，不再允许多个导入管线同时写后端账号池；同时在每次 `await` 后复检会话是否已取消/超时（经 `isEnded()` 传入 `submit` 与 `importCookie`），取消或超时后不再继续写入账号；若取消发生在账号已创建、检测进行中或刚返回之后，`importCookie` 会 `DELETE` 回滚本次新建的账号（不动其它账号）。页面端取消后立即禁用表单，`/submit` 收到 `410` 也不再提示原地重试。
+- `authorize` 不再把首次 `ensureBackend` 的失败 Promise 锁死：首次下载失败（如无代理拿到 503）或用户在向导页改填了代理时，`submit` 会以表单实际代理重新调用 `ensureBackend`，原地重试可成功登录；每代重建跟踪自己的失败状态（代际守卫），旧代迟到的 reject 不会污染新一代，后端就绪后再次检查会话是否已结束，已取消则不再导入 Cookie。
+- 向导页模板替换改为函数 replacer：代理密码中含 `$$`、`$'`、`$&`、`` $` `` 等字符不再被 `String.prototype.replace` 的 `$` 元语法误展开而破坏 DOM；代理输入提示改为准确描述（留空表示不在本次登录指定代理，后端已配置代理池仍按其规则生效），第 1 步常驻展示可复制的 `https://gemini.google.com/app` 手动链接（自动拉起成功时也可见，覆盖 macOS Firefox 已运行锁或窗口未前置场景）。
+
 ## 0.18.0 - 2026-11-19
 
 ### 变更

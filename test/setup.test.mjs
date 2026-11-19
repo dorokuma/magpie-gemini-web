@@ -157,6 +157,52 @@ describe('25. Cookie import through the admin API', () => {
     await assert.rejects(importCookie(setup, SIGNED_IN, { fetchFn: refused }), /无法确认本地 Gemini Web 后端的登录能力.*fetch failed/);
   });
 
+  // A cancel that lands while the account exists but before it is verified removes exactly
+  // that account: the session is over and nobody will sign in to it.
+  it('rolls back the just-created account when isEnded flips before the check runs', async () => {
+    const calls = [];
+    const ended = [];
+    const r = importCookie(setup, SIGNED_IN, {
+      isEnded: () => ended.length > 0,
+      fetchFn: async (url, init) => {
+        calls.push({ path: new URL(url).pathname, method: init.method, auth: init.headers?.Authorization, body: init.body });
+        if (new URL(url).pathname === '/') return Response.json(LOGIN_CAPABILITIES);
+        if (init.method === 'POST' && url.endsWith('/cookies')) {
+          // The cancel lands as the account-creation answer arrives: importCookie's guard
+          // right after POST /cookies must fire, and the check must never be called.
+          ended.push(true);
+          return Response.json({ id: 7 });
+        }
+        if (url.endsWith('/check')) return Response.json({ ok: true, detail: 'fine' });
+        return Response.json({ ok: true });
+      }
+    });
+    await assert.rejects(r, /登录已取消/);
+    assert.equal(calls.some(c => c.path === '/admin/api/cookies/7/check'), false,
+      'the check must not run once the session has ended');
+    assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).filter(s => s.startsWith('DELETE')),
+      ['DELETE /admin/api/cookies/7']);
+    assert.equal(calls.at(-1).method, 'DELETE');
+  });
+
+  it('rolls back the account when isEnded flips after the check resolves', async () => {
+    const calls = [];
+    const ended = [];
+    let checked = false;
+    const r = importCookie(setup, SIGNED_IN, {
+      isEnded: () => ended.length > 0,
+      fetchFn: adminFetch(() => {
+        checked = true;
+        return Promise.resolve(Response.json({ ok: true, detail: 'fine' }))
+          .then(v => { ended.push(true); return v; }); // cancel lands while the check resolves
+      }, calls)
+    });
+    await assert.rejects(r, /登录已取消/);
+    assert.equal(checked, true);
+    assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).filter(s => s.startsWith('DELETE')),
+      ['DELETE /admin/api/cookies/7']);
+  });
+
   it('validates proxy URLs and configures the backend proxy pool before checking a cookie', async () => {
     assert.equal(validateProxyURL(''), '');
     assert.equal(validateProxyURL('  http://127.0.0.1:7890 '), 'http://127.0.0.1:7890');
@@ -402,6 +448,9 @@ describe('27. One-click sign-in through the plugin', () => {
   let previousDataDir;
   const accounts = new Map();
   let nextId = 1;
+  // A test can hold the backend's /check answer open to stage a cancel mid-import.
+  let checkGate = null;
+  let checkEntered = false;
   // The backend's database, which the plugin reads the pool from: the fake backend keeps its
   // accounts there too.
   let db;
@@ -431,9 +480,21 @@ describe('27. One-click sign-in through the plugin', () => {
         }
         if (req.method === 'POST' && req.url === '/admin/api/proxies') {
           const parsed = JSON.parse(body);
-          const id = nextId++;
-          db.prepare('INSERT INTO proxies (id, name, url, enabled) VALUES (?, ?, ?, 1)').run(id, parsed.name, parsed.url);
-          return send(200, { id });
+          const { lastInsertRowid } =
+            db.prepare('INSERT INTO proxies (name, url, enabled) VALUES (?, ?, 1)').run(parsed.name, parsed.url);
+          return send(200, { id: Number(lastInsertRowid) });
+        }
+        const pm = req.url.match(/^\/admin\/api\/proxies\/(\d+)(\/reset)?$/);
+        if (pm && req.method === 'PATCH' && !pm[2]) {
+          const parsed = JSON.parse(body);
+          if (parsed.url !== undefined) db.prepare('UPDATE proxies SET url = ?, name = ? WHERE id = ?')
+            .run(parsed.url, parsed.name ?? 'Magpie', Number(pm[1]));
+          if (parsed.enabled !== undefined) db.prepare('UPDATE proxies SET enabled = ? WHERE id = ?')
+            .run(parsed.enabled ? 1 : 0, Number(pm[1]));
+          return send(200, { ok: true });
+        }
+        if (pm && req.method === 'POST' && pm[2]) {
+          return send(200, { ok: true });
         }
         if (req.method === 'POST' && req.url === '/admin/api/cookies') {
           const parsed = JSON.parse(body);
@@ -446,14 +507,21 @@ describe('27. One-click sign-in through the plugin', () => {
         }
         const m = req.url.match(/^\/admin\/api\/cookies\/(\d+)(\/check)?$/);
         if (m && req.method === 'POST' && m[2]) {
-          const entry = accounts.get(Number(m[1]));
-          const cookie = entry?.cookie || '';
-          if (entry) {
-            const row = db.prepare('SELECT proxy_id, authuser FROM accounts WHERE id = ?').get(Number(m[1]));
-            entry.checkedProxyId = row?.proxy_id ?? 0;
-            entry.checkedAuthuser = row?.authuser ?? 0;
+          const answer = () => {
+            const entry = accounts.get(Number(m[1]));
+            const cookie = entry?.cookie || '';
+            if (entry) {
+              const row = db.prepare('SELECT proxy_id, authuser FROM accounts WHERE id = ?').get(Number(m[1]));
+              entry.checkedProxyId = row?.proxy_id ?? 0;
+              entry.checkedAuthuser = row?.authuser ?? 0;
+            }
+            return send(200, cookie.includes('SID=good') ? { ok: true, detail: 'ok' } : { ok: false, detail: 'not signed in' });
+          };
+          if (checkGate) {
+            checkEntered = true;
+            return checkGate.then(answer);
           }
-          return send(200, cookie.includes('SID=good') ? { ok: true, detail: 'ok' } : { ok: false, detail: 'not signed in' });
+          return answer();
         }
         if (m && req.method === 'DELETE') {
           accounts.delete(Number(m[1]));
@@ -490,6 +558,18 @@ describe('27. One-click sign-in through the plugin', () => {
     return method;
   }
 
+  // post submits the wizard's form the way its page does; the wizard's own route, Origin and
+  // body-limit defences are covered in web-connect.test.mjs.
+  async function post(url, route, data = {}) {
+    const res = await fetch(url + route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: new URL(url).origin },
+      body: JSON.stringify(data)
+    });
+    const body = res.status === 204 ? null : await res.json().catch(() => null);
+    return { status: res.status, body };
+  }
+
   it('offers one-click setup first and keeps the custom-backend method', async () => {
     const plugin = await GeminiWebPlugin({});
     assert.deepEqual(plugin.auth.methods.map(m => m.type), ['oauth', 'api', 'oauth']);
@@ -499,34 +579,120 @@ describe('27. One-click sign-in through the plugin', () => {
     const method = await oauthMethod();
     const before = nextId;
     backendCapabilities = { version: '4.22.0-magpie.1' };
+    let pending;
     try {
-      // authorize returns at once (see the first-download test); the check comes in the callback.
-      const blocked = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
-      const result = await blocked.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /请先升级/);
+      // The capability is checked inside the wizard's submit, not when authorize returns.
+      pending = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN, authuser: '', proxy: 'http://127.0.0.1:7890'
+      });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /请先升级/);
       assert.equal(nextId, before, 'no proxy or account may be added to the old backend');
-    } finally { backendCapabilities = LOGIN_CAPABILITIES; }
-    const pending = await method.authorize();
-    assert.equal(pending.method, 'code');
+    } finally {
+      backendCapabilities = LOGIN_CAPABILITIES;
+      await post(pending.url, '/cancel');
+    }
+    const next = await method.authorize();
+    assert.equal(next.method, 'auto');
+    await post(next.url, '/cancel');
   });
 
-  it('rechecks capability if an old service replaces the backend while the cookie form is open', async () => {
+  it('rechecks capability if an old service replaces the backend while the wizard is open', async () => {
     const pending = await (await oauthMethod()).authorize();
     const before = nextId;
     backendCapabilities = { version: '4.22.0-magpie.1' };
     try {
-      const result = await pending.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /请先升级/);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /请先升级/);
       assert.equal(nextId, before);
-    } finally { backendCapabilities = LOGIN_CAPABILITIES; }
+    } finally {
+      backendCapabilities = LOGIN_CAPABILITIES;
+      await post(pending.url, '/cancel');
+    }
   });
 
-  it('signs in with the local backend key after a working cookie is imported', async () => {
+  // A cancel that lands while the backend is still checking the cookie must delete the
+  // account the import just created: the wizard is over and nobody signs in to it. Runs
+  // before any account lands in the pool so the rollback leaves it empty.
+  it('rolls back the just-created account when cancel lands during the backend check', { timeout: 10000 }, async () => {
+    const before = nextId;
+    let release;
+    checkGate = new Promise(resolve => { release = resolve; });
+    checkEntered = false;
     const pending = await (await oauthMethod()).authorize();
-    assert.equal(pending.method, 'code');
-    assert.match(pending.url, /^https:\/\/gemini\.google\.com\//);
+    try {
+      const waiting = pending.callback();
+      const submission = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      // Wait until the import is parked inside the backend's /check, then cancel.
+      while (!checkEntered) await new Promise(resolve => setImmediate(resolve));
+      assert.equal((await post(pending.url, '/cancel')).status, 204);
+      release();
+      const r = await submission;
+      assert.equal(r.status, 410);
+      const outcome = await waiting;
+      assert.equal(outcome.type, 'failed');
+      assert.match(outcome.error, /取消/);
+      // The account that the import created was deleted again; nothing else was touched.
+      assert.equal(nextId, before + 1, 'the account was created, then rolled back');
+      assert.equal(accounts.size, 0);
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
+    } finally {
+      checkGate = null;
+      release();
+    }
+  });
+
+  // A cancel can land after importCookie returned, while signInFor waits on the app page for
+  // the account's email: the account the import just created is already verified, but the
+  // session is over and nobody signs in to it. Submit keeps the rollback for that window and
+  // must delete exactly that account — an enabled one already in the pool stays untouched.
+  it('rolls back the imported account when cancel lands while signInFor waits for the email', { timeout: 10000 }, async () => {
+    const before = nextId;
+    // An enabled account already in the pool: the rollback must not touch it.
+    db.exec(`INSERT INTO accounts (id, label, cookie, status, proxy_id) VALUES (40, 'existing', 'SID=keep', 'enabled', 0)`);
+    const realFetch = globalThis.fetch;
+    let emailRequested = false;
+    let releaseEmail;
+    const emailGate = new Promise(resolve => { releaseEmail = resolve; });
+    globalThis.fetch = (url, init) => {
+      if (String(url).startsWith('https://gemini.google.com/')) {
+        emailRequested = true;
+        return emailGate.then(() => new Response('{"oPEP7c":"late@gmail.com"}'));
+      }
+      return realFetch(url, init);
+    };
+    const pending = await (await oauthMethod()).authorize();
+    try {
+      const waiting = pending.callback();
+      const submission = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      // Wait until the import is verified and signInFor is parked inside the email fetch,
+      // then cancel.
+      while (!emailRequested) await new Promise(resolve => setImmediate(resolve));
+      assert.equal((await post(pending.url, '/cancel')).status, 204);
+      releaseEmail();
+      const r = await submission;
+      assert.equal(r.status, 410);
+      const outcome = await waiting;
+      assert.equal(outcome.type, 'failed');
+      assert.match(outcome.error, /取消/);
+      // The account the import created was deleted again; the pre-existing one was not.
+      assert.equal(nextId, before + 1, 'the account was created, then rolled back');
+      assert.equal(accounts.size, 0);
+      // The pre-existing account's row was not touched by the rollback.
+      assert.equal(db.prepare('SELECT cookie FROM accounts WHERE id = 40').get().cookie, 'SID=keep');
+    } finally {
+      globalThis.fetch = realFetch;
+      releaseEmail();
+      db.exec('DELETE FROM accounts WHERE id = 40');
+    }
+  });
+
+  it('signs in with the local backend key after a working cookie is imported through the wizard', async () => {
+    const pending = await (await oauthMethod()).authorize();
+    assert.equal(pending.method, 'auto');
+    assert.match(pending.url, /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]+$/);
     assert.match(pending.instructions, /cookie/);
 
     // the Google email comes from the signed-in app page, answered here
@@ -536,7 +702,10 @@ describe('27. One-click sign-in through the plugin', () => {
       : realFetch(url, init);
     let result;
     try {
-      result = await pending.callback(`cookie: ${SIGNED_IN.replace('SID=v-SID', 'SID=good')}`);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      assert.equal(submission.status, 200);
+      assert.equal(submission.body.email, 'setup@gmail.com');
+      result = await pending.callback();
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -560,7 +729,9 @@ describe('27. One-click sign-in through the plugin', () => {
     };
     let result;
     try {
-      result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-pooled'));
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-pooled') });
+      assert.equal(submission.status, 200);
+      result = await pending.callback();
     } finally {
       globalThis.fetch = realFetch;
       db.exec('DELETE FROM proxies');
@@ -571,13 +742,17 @@ describe('27. One-click sign-in through the plugin', () => {
     assert.deepEqual(google, []);
   });
 
-  it('fails without keeping the account when the cookie does not sign in', async () => {
+  it('fails in place without keeping the account when the cookie does not sign in', async () => {
     const before = accounts.size;
     const pending = await (await oauthMethod()).authorize();
-    const result = await pending.callback(SIGNED_IN);
-    assert.equal(result.type, 'failed');
-    assert.match(result.error, /not signed in/);
+    const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+    assert.equal(submission.status, 400);
+    assert.match(submission.body.error, /not signed in/);
     assert.equal(accounts.size, before);
+    await post(pending.url, '/cancel');
+    const result = await pending.callback();
+    assert.equal(result.type, 'failed');
+    assert.match(result.error, /取消/);
   });
 
   it('signs in to an account already in the backend pool, one sign-in per Google account', async () => {
@@ -615,27 +790,31 @@ describe('27. One-click sign-in through the plugin', () => {
   it('fails with the missing cookie names before calling the backend', async () => {
     const before = nextId;
     const pending = await (await oauthMethod()).authorize();
-    const result = await pending.callback('NID=1');
-    assert.equal(result.type, 'failed');
-    assert.match(result.error, /缺少 SID/);
+    const submission = await post(pending.url, '/submit', { cookie: 'NID=1' });
+    assert.equal(submission.status, 400);
+    assert.match(submission.body.error, /缺少 SID/);
     assert.equal(nextId, before);
+    await post(pending.url, '/cancel');
   });
 
-  it('shows the cookie steps while a first download runs, and fails in the callback if it does', { timeout: 5000 }, async () => {
+  it('opens the wizard while a first download runs, and reports its failure on submit', { timeout: 5000 }, async () => {
     // Magpie gives authorize one minute, less than a first download can take.
     const fresh = makeDataDir({ binary: null });
     process.env.GEMINI_WEB_DATA_DIR = fresh;
     let finish;
     const download = new Promise(resolve => { finish = resolve; });
     const realFetch = globalThis.fetch;
-    globalThis.fetch = () => download;
+    // The wizard's own posts still need a real fetch; only the release download is mocked.
+    globalThis.fetch = (url, init) => String(url).startsWith('http://127.0.0.1:') ? realFetch(url, init) : download;
     try {
       const pending = await (await oauthMethod()).authorize();
-      assert.equal(pending.method, 'code');
+      assert.equal(pending.method, 'auto');
+      assert.match(pending.url, /^http:\/\/127\.0\.0\.1:/);
       finish(new Response('', { status: 503 }));
-      const result = await pending.callback(SIGNED_IN);
-      assert.equal(result.type, 'failed');
-      assert.match(result.error, /HTTP 503/);
+      const submission = await post(pending.url, '/submit', { cookie: SIGNED_IN });
+      assert.equal(submission.status, 400);
+      assert.match(submission.body.error, /HTTP 503/);
+      await post(pending.url, '/cancel');
     } finally {
       globalThis.fetch = realFetch;
       process.env.GEMINI_WEB_DATA_DIR = dataDir;
@@ -643,12 +822,85 @@ describe('27. One-click sign-in through the plugin', () => {
     }
   });
 
-  it('uses the selected session for account checking and the saved email identity (#53)', async () => {
+  it('retries ensureBackend after a failed attempt instead of reusing its rejection, across generations', { timeout: 30000 }, async () => {
+    // No binary yet: authorize's first ensureBackend (no proxy) fails on a 503 download. A
+    // submit that re-used that dead promise could never succeed; it must run ensureBackend
+    // again — and the same must hold for the retry's own failure: a second 503 generation
+    // must not lock the session into its rejection either.
+    // Port 9 (discard) answers nothing, so the first ensureBackend cannot adopt a running
+    // backend; its download is held until the test lets it fail with a 503.
+    const fresh = makeDataDir({ binary: null, port: 9 });
+    process.env.GEMINI_WEB_DATA_DIR = fresh;
+    const downloads = [];
+    let finishDownload;
+    const downloadGate = new Promise(resolve => { finishDownload = resolve; });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (url, init) => {
+      const s = String(url);
+      if (s.startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      downloads.push({ url: s, proxy: init?.proxy || '' });
+      return downloadGate.then(() => new Response('', { status: 503 }));
+    };
+    try {
+      const pending = await (await oauthMethod()).authorize();
+      // The first ensureBackend is still inside its download when the first submit arrives:
+      // reusing that in-flight promise is correct, and its 503 lands on the page in place.
+      while (!downloads.length) await new Promise(resolve => setImmediate(resolve));
+      const firstPromise = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      finishDownload();
+      const first = await firstPromise;
+      assert.equal(first.status, 400);
+      assert.match(first.body.error, /HTTP 503/);
+      downloads.length = 0;
+
+      // First rebuild: the failed generation made submit call ensureBackend again; with no
+      // binary yet its own install runs too. Submitting a proxy takes the install down the
+      // curl path, so the attempt dies on the unreachable proxy — and its error names the
+      // proxy, proving a fresh ensureBackend ran rather than the dead promise being reused.
+      // The second failed generation must be tracked just like the first, not left to
+      // poison every later retry.
+      const second = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-retry'), proxy: 'http://127.0.0.1:10809'
+      });
+      assert.equal(second.status, 400);
+      assert.match(second.body.error, /curl.*127\.0\.0\.1.*10809|Failed to download/, 'the rebuilt ensureBackend ran its own install');
+
+      // A trusted binary now on disk and the config aimed at the fake backend (what a
+      // successful download plus start would have produced): a third submit with the same
+      // proxy must rebuild ensureBackend once more, adopt the running backend, and sign
+      // in — proof the second generation's failure did not poison the retry state.
+      fs.writeFileSync(path.join(fresh, 'bin', 'gemini-web2api-go'), 'fake backend', { mode: 0o700 });
+      trustBinary(fresh);
+      fs.writeFileSync(path.join(fresh, 'config.json'),
+        JSON.stringify({ host: '127.0.0.1', port: server.address().port }));
+      globalThis.fetch = (url, init) => String(url).startsWith('http://127.0.0.1:')
+        ? realFetch(url, init)
+        : Promise.resolve(new Response('', { status: 503 }));
+      const third = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-retry'), proxy: 'http://127.0.0.1:10809'
+      });
+      assert.equal(third.status, 200, third.body?.error || JSON.stringify(third.body));
+      const result = await pending.callback();
+      assert.equal(result.type, 'success');
+      assert.ok(accounts.has(result.metadata.account), 'the cookie was imported into the pool');
+      assert.equal(accounts.get(result.metadata.account).checkedProxyId > 0, true,
+        'the account was bound to the wizard-submitted proxy');
+      assert.equal(downloads.length, 0, 'adopting the trusted binary never re-downloaded');
+    } finally {
+      globalThis.fetch = realFetch;
+      process.env.GEMINI_WEB_DATA_DIR = dataDir;
+      fs.rmSync(fresh, { recursive: true, force: true });
+      // Keep this test's pool state out of the ones after it, the way they isolate theirs.
+      db.exec('DELETE FROM proxies');
+    }
+  });
+
+  it('uses the wizard-submitted index for account checking and the saved email identity (#53)', async () => {
     const method = await oauthMethod();
-    await assert.rejects(method.authorize({ authuser: '-1' }), /账号索引/);
-    const pending = await method.authorize({ authuser: '4' });
-    assert.equal(pending.url, 'https://gemini.google.com/u/4/app');
-    assert.ok(pending.instructions.includes(pending.url));
+    const pending = await method.authorize();
+    const bad = await post(pending.url, '/submit', { cookie: SIGNED_IN, authuser: '-1' });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /账号索引/);
     const realFetch = globalThis.fetch;
     const google = [];
     globalThis.fetch = (url, init) => {
@@ -659,43 +911,47 @@ describe('27. One-click sign-in through the plugin', () => {
       return realFetch(url, init);
     };
     try {
-      const result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-four'));
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-four'), authuser: '4'
+      });
+      assert.equal(submission.status, 200);
+      const result = await pending.callback();
       assert.equal(result.type, 'success');
       assert.equal(accounts.get(result.metadata.account).checkedAuthuser, 4);
       assert.equal(db.prepare('SELECT authuser FROM accounts WHERE id = ?').get(result.metadata.account).authuser, 4);
       assert.equal(result.metadata.email, 'session-four@gmail.com');
       assert.equal(result.metadata.authuser, 4);
-      assert.deepEqual(google, [pending.url]);
+      assert.deepEqual(google, ['https://gemini.google.com/u/4/app']);
     } finally {
       globalThis.fetch = realFetch;
     }
   });
 
-  it('asks for an optional proxy up front, binds the new account to it before checking, and uses it even when another proxy is in the pool', async () => {
+  it('asks only for an optional proxy up front, binds the new account to the submitted proxy before checking, and uses it even when another proxy is in the pool', async () => {
     const method = await oauthMethod();
-    assert.equal(method.prompts[0].key, 'proxy');
+    assert.deepEqual(method.prompts.map(p => p.key), ['proxy'], 'no authuser question before the window exists');
     const question = method.ask({});
     assert.equal(question.key, 'proxy');
     assert.equal(question.validate(''), undefined);
     assert.equal(question.validate('http://127.0.0.1:7890'), undefined);
     assert.match(question.validate('bad-proxy'), /代理地址/);
-    const indexQuestion = method.ask({ proxy: '' });
-    assert.equal(indexQuestion.key, 'authuser');
-    assert.equal(indexQuestion.validate('4'), undefined);
-    assert.match(indexQuestion.validate('-1'), /账号索引/);
-    assert.equal(method.ask({ proxy: '', authuser: '' }), null);
-    assert.equal(method.ask({ proxy: 'http://127.0.0.1:7890', authuser: '4' }), null);
+    assert.equal(method.ask({ proxy: '' }), null);
+    assert.equal(method.ask({ proxy: 'http://127.0.0.1:7890' }), null);
 
     // Pre-populate Proxy A in the pool so Proxy B is the second entry.
-    db.exec(`INSERT INTO proxies VALUES (1, 'proxy-a', 'http://127.0.0.1:18080', 1)`);
+    db.exec(`INSERT INTO proxies (name, url, enabled) VALUES ('proxy-a', 'http://127.0.0.1:18080', 1)`);
     const realFetch = globalThis.fetch;
     globalThis.fetch = (url, init) => url === 'https://gemini.google.com/app'
       ? Promise.resolve(new Response('{"oPEP7c":"proxied@gmail.com"}'))
       : realFetch(url, init);
     try {
-      // authorize returns at once; the proxy pool is set up in the callback.
+      // The prompt answer pre-fills the wizard's proxy field; the page posts it back on submit.
       const pending = await method.authorize({ proxy: 'http://127.0.0.1:7890' });
-      const result = await pending.callback(SIGNED_IN.replace('SID=v-SID', 'SID=good-proxied'));
+      const submission = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-proxied'), proxy: 'http://127.0.0.1:7890'
+      });
+      assert.equal(submission.status, 200, submission.body?.error || '');
+      const result = await pending.callback();
       assert.equal(result.type, 'success');
 
       const rows = db.prepare('SELECT id, name, url, enabled FROM proxies ORDER BY id').all();

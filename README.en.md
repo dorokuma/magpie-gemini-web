@@ -35,7 +35,7 @@ The plugin provides two independent providers that can be used individually or t
 | **Thinking levels** | Supported levels from the model catalog: `minimal` / `low` / `medium` / `high` / `xhigh` (Hydrogen) | `low` (base) / `medium` (`-thinking-medium`, Carbon / Neon families) / `high` (`-thinking` extended thinking) |
 | **Image input** | On by default; chat models read images | On by default; chat models read images (needs a signed-in cookie) |
 | **Image generation** | Nano Banana models, for Magpie's image generation (Magpie v0.1.2075+, see below) | Not supported |
-| **Sign-in method** | Automatic official installation; confirm an imported account | Copy `cookie` from a private/incognito window |
+| **Sign-in method** | Automatic official installation; confirm an imported account | Local wizard: copy `cookie` from a private/incognito window |
 | **Usage cards** | Shows models currently on cooldown and recovery times | Syncs **5-hour** & **weekly** usage and reset times from the web |
 | **Local backend** | AIStudio2API (automatic installation and stable updates) | gemini-web2api-go (`v6.2.0` pinned binary) |
 
@@ -84,13 +84,12 @@ For an independently running service, choose **Connect an existing AIStudio2API 
 
 ### Option 2: Gemini Web (`gemini-web`)
 
-1. Sign in to **Gemini Web** in Magpie and choose **「一键配置本地 Gemini Web（推荐）」** (One-click local setup). If you need a proxy to reach Google, enter its URL (e.g. `http://127.0.0.1:7890`) when prompted at the start of sign-in, or leave it blank for direct connection / existing proxy pool.
-2. Enter the **Google account index** when prompted: for `/u/4/app` in the same window you copy cookies from, enter `4`; leave it blank for a single-account session (`0`). Private windows may assign different indices from your regular browser. Copy your cookie using a **private / incognito window** (Firefox recommended):
-   1. Open <https://gemini.google.com/app> in the private window and sign in to your Google account.
-   2. Press `F12` (`⌥⌘I` on macOS), switch to the **Network** tab, and reload the page.
-   3. Click any `gemini.google.com` request → **Headers** → **Request Headers**, copy the `cookie` value, and paste it into Magpie.
-   4. **Close the private window directly—do not sign out** (signing out invalidates the cookie).
-3. The plugin verifies the account and completes sign-in. Repeat the steps above to add more accounts.
+1. Sign in to **Gemini Web** in Magpie and choose **「一键配置本地 Gemini Web（推荐）」** (One-click local setup). If you need a proxy to reach Google, enter its URL (e.g. `http://127.0.0.1:7890`) when prompted at the start of sign-in, or leave it blank for direct connection / existing proxy pool—you can also fill or change it on the local sign-in wizard page.
+2. Magpie opens a **local sign-in wizard** (`127.0.0.1`, random port + random path, loopback only) that walks you through three steps:
+   1. Click **「打开无痕窗口登录 Gemini」**; the plugin launches the first detected browser in private mode (Firefox preferred, then Chrome / Brave / Chromium / Edge). If no known browser is found the page shows the link—open <https://gemini.google.com/app> in a private window yourself and sign in to your Google account.
+   2. Press `F12` (`⌥⌘I` on macOS), switch to the **Network** tab, reload the page, click any `gemini.google.com` request → **Headers** → **Request Headers**, copy the `cookie` value and paste it back into the wizard.
+   3. In the same form enter the **Google account index** (the `N` from `/u/N/app` in the private window's address bar—blank means `0` for a single account) and an optional **proxy URL**, then click **「验证并完成登录」**. Failures are shown in place; fix the fields and retry without starting over.
+3. Once the page shows the bound email, sign-in is complete—**close the private window directly, do not sign out** (signing out invalidates the cookie). Repeat the steps above to add more accounts.
 
 > **Backend upgrade required during sign-in?** An older background process may still be running. Exit Magpie, stop the matching `gemini-web2api-go` process (Windows: Task Manager → Details → `gemini-web2api-go.exe`), then run the full installation command shown in the error. It preserves accounts and configuration and selects the plugin's managed backend. Set `GEMINI_WEB_PROXY` first if the download needs a proxy. Reopen Magpie and sign in after installation.
 
