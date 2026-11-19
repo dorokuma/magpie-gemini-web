@@ -7,11 +7,11 @@ import { REQUIRED_COOKIES } from '../lib/setup.mjs';
 
 const SIGNED_IN = REQUIRED_COOKIES.map(n => `${n}=v-${n}`).join('; ');
 
-async function fixture({ submit, privateBrowser, timeoutMs } = {}) {
+async function fixture({ submit, privateBrowser, timeoutMs, proxy } = {}) {
   const seen = [];
   const page = await startWebConnect({
-    proxy: 'http://127.0.0.1:7890',
-    privateBrowser: privateBrowser || (() => ({ opened: true, browser: 'Firefox' })),
+    proxy: proxy ?? 'http://127.0.0.1:7890',
+    privateBrowser: privateBrowser || (async () => ({ opened: true, browser: 'Firefox' })),
     submit: submit || (async input => { seen.push(input); return { signIn: { type: 'success' }, email: 'bound@gmail.com' }; }),
     timeoutMs
   });
@@ -67,7 +67,7 @@ describe('web connect wizard', () => {
   it('launches the private browser and reports the choice or the manual fallback', async () => {
     const opened = [];
     const { page, post } = await fixture({
-      privateBrowser: url => { opened.push(url); return { opened: true, browser: 'Brave' }; }
+      privateBrowser: async url => { opened.push(url); return { opened: true, browser: 'Brave' }; }
     });
     try {
       const r = await post('/open-private');
@@ -75,7 +75,7 @@ describe('web connect wizard', () => {
       assert.deepEqual(r.body, { opened: true, browser: 'Brave' });
       assert.deepEqual(opened, ['https://gemini.google.com/app']);
     } finally { await page.close(); }
-    const { page: none, post: postNone } = await fixture({ privateBrowser: () => ({ opened: false, reason: '没有找到可启动无痕窗口的浏览器' }) });
+    const { page: none, post: postNone } = await fixture({ privateBrowser: async () => ({ opened: false, reason: '没有找到可启动无痕窗口的浏览器' }) });
     try {
       const r = await postNone('/open-private');
       assert.deepEqual(r.body, { opened: false, reason: '没有找到可启动无痕窗口的浏览器' });
@@ -110,7 +110,10 @@ describe('web connect wizard', () => {
       });
       assert.equal(r.status, 200);
       assert.equal(r.body.email, 'bound@gmail.com');
-      assert.deepEqual(seen, [{ cookie: SIGNED_IN, authuser: 4, proxy: 'http://127.0.0.1:7890' }]);
+      assert.equal(seen.length, 1);
+      assert.deepEqual({ cookie: seen[0].cookie, authuser: seen[0].authuser, proxy: seen[0].proxy },
+        { cookie: SIGNED_IN, authuser: 4, proxy: 'http://127.0.0.1:7890' });
+      assert.equal(typeof seen[0].isEnded, 'function', 'submit is told how to ask whether the session ended');
       assert.deepEqual(await waiting, { signIn: { type: 'success' }, email: 'bound@gmail.com' });
       // The session is over: further posts are refused.
       assert.equal((await post('/submit', { cookie: SIGNED_IN })).status, 410);
@@ -118,6 +121,88 @@ describe('web connect wizard', () => {
       const state = await (await fetch(page.url + '/state')).json();
       assert.equal(state.done, true);
       assert.equal(state.email, 'bound@gmail.com');
+    } finally { await page.close(); }
+  });
+
+  // While one submit is inside the import pipeline a second POST must not enter it too:
+  // racing imports would hand the backend two accounts of one cookie.
+  it('serializes concurrent submits: the second gets 409 and never reaches submit', async () => {
+    let gate;
+    const calls = [];
+    const { page, post } = await fixture({
+      submit: input => {
+        calls.push(input);
+        return new Promise(resolve => { gate = () => resolve({ signIn: { type: 'success' } }); });
+      }
+    });
+    try {
+      const waiting = page.wait();
+      const first = post('/submit', { cookie: SIGNED_IN });
+      // Let the first request reach submit before the second arrives.
+      while (!calls.length) await new Promise(resolve => setImmediate(resolve));
+      const second = await post('/submit', { cookie: SIGNED_IN, authuser: '2' });
+      assert.equal(second.status, 409);
+      assert.match(second.body.error, /正在验证中/);
+      gate();
+      const r = await first;
+      assert.equal(r.status, 200);
+      assert.equal(calls.length, 1, 'only the first submit ran the import pipeline');
+      assert.equal(calls[0].authuser, 0);
+      await waiting;
+    } finally { await page.close(); }
+  });
+
+  // A cancel or timeout while submit waits for the backend must keep the import from landing
+  // afterwards, and must not leave an unhandled rejection behind.
+  it('aborts a pending submit on cancel without importing afterwards or crashing', async () => {
+    let gate;
+    let entered = false;
+    let endedDuringSubmit = false;
+    let settled = false;
+    const { page, post } = await fixture({
+      submit: async input => {
+        entered = true;
+        await new Promise(resolve => { gate = resolve; });
+        endedDuringSubmit = input.isEnded();
+        settled = true;
+        return { signIn: { type: 'success' }, email: 'late@gmail.com' };
+      }
+    });
+    try {
+      const waiting = page.wait();
+      const first = post('/submit', { cookie: SIGNED_IN });
+      while (!entered) await new Promise(resolve => setImmediate(resolve));
+      assert.equal((await post('/cancel')).status, 204);
+      gate();
+      const r = await first;
+      assert.equal(r.status, 410);
+      assert.equal(endedDuringSubmit, true, 'submit can see the session ended while it waited');
+      await assert.rejects(waiting, /取消/);
+      // Let any stray rejection surface before the test ends.
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(settled, true);
+      // A retry against the ended session is refused, not queued behind the flag.
+      assert.equal((await post('/submit', { cookie: SIGNED_IN })).status, 410);
+    } finally { await page.close(); }
+  });
+
+  it('aborts a pending submit when the session times out', async () => {
+    let gate;
+    const { page, post } = await fixture({
+      timeoutMs: 30,
+      submit: async () => {
+        await new Promise(resolve => { gate = resolve; });
+        return { signIn: { type: 'success' } };
+      }
+    });
+    try {
+      const waiting = page.wait();
+      const first = post('/submit', { cookie: SIGNED_IN });
+      await assert.rejects(waiting, /10 分钟/);
+      gate();
+      const r = await first;
+      assert.equal(r.status, 410);
+      await new Promise(resolve => setImmediate(resolve));
     } finally { await page.close(); }
   });
 
@@ -141,6 +226,21 @@ describe('web connect wizard', () => {
       assert.equal(second.status, 200);
       assert.equal(second.body.email, 'retry@gmail.com');
       await waiting;
+    } finally { await page.close(); }
+  });
+
+  // A proxy URL can legally carry $$ $' $& $` in its password; rendered through a literal
+  // replacement string those would re-expand as template metacharacters and corrupt the DOM.
+  it('prefills a proxy whose password has $ metacharacters without mangling the page', async () => {
+    const tricky = 'http://user:p%24%24%27%26%60@127.0.0.1:7890';
+    const { page } = await fixture({ proxy: tricky });
+    try {
+      const res = await fetch(page.url);
+      const html = await res.text();
+      assert.ok(html.includes(`value="${tricky}"`), 'proxy prefill survives the template verbatim');
+      assert.equal((html.match(/id="cookie"/g) || []).length, 1, 'no phantom textarea cloned by $-expansion');
+      assert.equal((html.match(/id="proxy"/g) || []).length, 1);
+      assert.match(html, /不会发到别处/, 'template still renders through the tail');
     } finally { await page.close(); }
   });
 

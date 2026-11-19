@@ -139,13 +139,30 @@ export const GeminiWebPlugin = async (_input, options = {}) => {
         // backend's own API key, one Magpie sign-in per Google account — see signInFor).
         async authorize(inputs) {
           const proxy = validateProxyURL(inputs?.proxy || opts.proxy || '');
-          const ready = ensureBackend({ proxy });
-          ready.catch(() => {});
+          // The first ensureBackend runs while the user signs in. Its outcome must not be
+          // locked into the submit: when it failed (e.g. a first download without a working
+          // proxy), or the wizard sends a different proxy than the prompt's, submit retries
+          // ensureBackend with the proxy the form actually carries — a locked-in rejection
+          // would make every in-place retry fail the same way forever.
+          let initialProxy = proxy;
+          let ready = ensureBackend({ proxy: initialProxy });
+          let readyFailed = false;
+          ready.catch(() => { readyFailed = true; });
           const session = await startWebConnect({
             proxy,
-            async submit({ cookie, authuser, proxy: formProxy }) {
+            async submit({ cookie, authuser, proxy: formProxy, isEnded }) {
+              if (readyFailed || (formProxy !== undefined && formProxy !== initialProxy)) {
+                const retryProxy = formProxy !== undefined ? formProxy : initialProxy;
+                ready = ensureBackend({ proxy: retryProxy });
+                ready.catch(() => {});
+                readyFailed = false;
+                initialProxy = retryProxy;
+              }
               const local = await ready;
-              const bind = formProxy !== undefined ? formProxy : proxy;
+              // The user may have cancelled or the session timed out while the backend was
+              // starting; importing into it now would keep an account nobody signs in to.
+              if (isEnded?.()) throw new Error('登录已结束，未导入 Cookie。');
+              const bind = formProxy !== undefined ? formProxy : initialProxy;
               const added = await importCookie(local, cookie, { authuser, ...(bind ? { proxy: bind } : {}) });
               const account = (await poolAccounts().catch(() => [])).find(a => a.id === added.id);
               const signIn = await signInFor(local, account || { id: added.id });

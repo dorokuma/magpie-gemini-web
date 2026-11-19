@@ -431,9 +431,21 @@ describe('27. One-click sign-in through the plugin', () => {
         }
         if (req.method === 'POST' && req.url === '/admin/api/proxies') {
           const parsed = JSON.parse(body);
-          const id = nextId++;
-          db.prepare('INSERT INTO proxies (id, name, url, enabled) VALUES (?, ?, ?, 1)').run(id, parsed.name, parsed.url);
-          return send(200, { id });
+          const { lastInsertRowid } =
+            db.prepare('INSERT INTO proxies (name, url, enabled) VALUES (?, ?, 1)').run(parsed.name, parsed.url);
+          return send(200, { id: Number(lastInsertRowid) });
+        }
+        const pm = req.url.match(/^\/admin\/api\/proxies\/(\d+)(\/reset)?$/);
+        if (pm && req.method === 'PATCH' && !pm[2]) {
+          const parsed = JSON.parse(body);
+          if (parsed.url !== undefined) db.prepare('UPDATE proxies SET url = ?, name = ? WHERE id = ?')
+            .run(parsed.url, parsed.name ?? 'Magpie', Number(pm[1]));
+          if (parsed.enabled !== undefined) db.prepare('UPDATE proxies SET enabled = ? WHERE id = ?')
+            .run(parsed.enabled ? 1 : 0, Number(pm[1]));
+          return send(200, { ok: true });
+        }
+        if (pm && req.method === 'POST' && pm[2]) {
+          return send(200, { ok: true });
         }
         if (req.method === 'POST' && req.url === '/admin/api/cookies') {
           const parsed = JSON.parse(body);
@@ -678,6 +690,65 @@ describe('27. One-click sign-in through the plugin', () => {
     }
   });
 
+  it('retries ensureBackend after a failed first attempt instead of reusing its rejection', { timeout: 15000 }, async () => {
+    // No binary yet: authorize's first ensureBackend (no proxy) fails on a 503 download. A
+    // submit that re-used that dead promise could never succeed; it must run ensureBackend
+    // again — and once a trusted binary exists (as if the proxied download had landed), the
+    // in-place retry starts it and signs in.
+    // Port 9 (discard) answers nothing, so the first ensureBackend cannot adopt a running
+    // backend; its download is held until the test lets it fail with a 503.
+    const fresh = makeDataDir({ binary: null, port: 9 });
+    process.env.GEMINI_WEB_DATA_DIR = fresh;
+    const downloads = [];
+    let finishDownload;
+    const downloadGate = new Promise(resolve => { finishDownload = resolve; });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (url, init) => {
+      const s = String(url);
+      if (s.startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      downloads.push({ url: s, proxy: init?.proxy || '' });
+      return downloadGate.then(() => new Response('', { status: 503 }));
+    };
+    try {
+      const pending = await (await oauthMethod()).authorize();
+      // The first ensureBackend is still inside its download when the first submit arrives:
+      // reusing that in-flight promise is correct, and its 503 lands on the page in place.
+      while (!downloads.length) await new Promise(resolve => setImmediate(resolve));
+      const firstPromise = post(pending.url, '/submit', { cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good') });
+      finishDownload();
+      const first = await firstPromise;
+      assert.equal(first.status, 400);
+      assert.match(first.body.error, /HTTP 503/);
+      downloads.length = 0;
+
+      // A trusted binary now on disk and the config aimed at the fake backend (what a
+      // successful proxied download plus start would have produced): the same in-place retry
+      // must adopt it and finish the sign-in — proof that submit re-ran ensureBackend instead
+      // of awaiting the dead first promise.
+      fs.writeFileSync(path.join(fresh, 'bin', 'gemini-web2api-go'), 'fake backend', { mode: 0o700 });
+      trustBinary(fresh);
+      fs.writeFileSync(path.join(fresh, 'config.json'),
+        JSON.stringify({ host: '127.0.0.1', port: server.address().port }));
+      globalThis.fetch = (url, init) => String(url).startsWith('http://127.0.0.1:')
+        ? realFetch(url, init)
+        : Promise.resolve(new Response('', { status: 503 }));
+      const second = await post(pending.url, '/submit', {
+        cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-retry'), proxy: 'http://127.0.0.1:10809'
+      });
+      assert.equal(second.status, 200, second.body?.error || JSON.stringify(second.body));
+      const result = await pending.callback();
+      assert.equal(result.type, 'success');
+      const acctId = result.metadata.account;
+      assert.equal(accounts.get(acctId).checkedProxyId > 0, true, 'the account was bound to the wizard-submitted proxy');
+    } finally {
+      globalThis.fetch = realFetch;
+      process.env.GEMINI_WEB_DATA_DIR = dataDir;
+      fs.rmSync(fresh, { recursive: true, force: true });
+      // Keep this test's pool state out of the ones after it, the way they isolate theirs.
+      db.exec('DELETE FROM proxies');
+    }
+  });
+
   it('uses the wizard-submitted index for account checking and the saved email identity (#53)', async () => {
     const method = await oauthMethod();
     const pending = await method.authorize();
@@ -722,7 +793,7 @@ describe('27. One-click sign-in through the plugin', () => {
     assert.equal(method.ask({ proxy: 'http://127.0.0.1:7890' }), null);
 
     // Pre-populate Proxy A in the pool so Proxy B is the second entry.
-    db.exec(`INSERT INTO proxies VALUES (1, 'proxy-a', 'http://127.0.0.1:18080', 1)`);
+    db.exec(`INSERT INTO proxies (name, url, enabled) VALUES ('proxy-a', 'http://127.0.0.1:18080', 1)`);
     const realFetch = globalThis.fetch;
     globalThis.fetch = (url, init) => url === 'https://gemini.google.com/app'
       ? Promise.resolve(new Response('{"oPEP7c":"proxied@gmail.com"}'))
@@ -733,7 +804,7 @@ describe('27. One-click sign-in through the plugin', () => {
       const submission = await post(pending.url, '/submit', {
         cookie: SIGNED_IN.replace('SID=v-SID', 'SID=good-proxied'), proxy: 'http://127.0.0.1:7890'
       });
-      assert.equal(submission.status, 200);
+      assert.equal(submission.status, 200, submission.body?.error || '');
       const result = await pending.callback();
       assert.equal(result.type, 'success');
 
