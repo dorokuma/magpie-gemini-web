@@ -2,6 +2,11 @@
 
 本文件按版本倒序记录 `magpie-gemini-web`（0.15.0 起为 `@dorokuma/magpie-gemini-web`）的全部已发布与待发变更，依据本仓 `git log` 与 tag 事实编写。
 
+## 0.19.0 - 2026-11-21
+
+### 新增
+- Gemini Web 后端 pin 升级至 **`dorokuma/gemini-web2api-go` `v6.3.0`** 官方预编译二进制：新增常驻真实浏览器传输层 `browser_transport`（默认关闭，CDP + 页内流式 `fetch`，策略 M1 单主号粘性驻留、Cookie jar 自动续期）与 `browser_fallback_http`（默认关闭，拉不起浏览器时回 HTTP 502 `browser_unavailable`，绝不静默降级）；新增部署级只读配置 `browser_path` / `browser_profile_dir`（绝不暴露给免鉴权 `/admin` 运行时配置）；同时包含本地代理桥 SSRF 守卫、跨出口并发切换协调、CDP WebSocket 取消与写帧失败终态断连，以及驻留 jar 读写锁与身份守卫。
+
 ## 0.18.2 - 2026-11-19
 
 ### 变更
